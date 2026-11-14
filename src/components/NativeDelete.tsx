@@ -1,0 +1,226 @@
+import { cn } from "@/lib/utils";
+import { AnimatePresence, motion, MotionConfig } from "framer-motion";
+import { Check, Trash2, X } from "lucide-react";
+import { useState } from "react";
+
+export interface NativeDeleteProps {
+  /**
+   * Callback when delete button is first clicked (shows confirmation)
+   */
+  onConfirm: () => void;
+  /**
+   * Callback when delete is confirmed
+   */
+  onDelete: () => void;
+  /**
+   * Text to show on the delete button
+   * Default: "Delete"
+   */
+  buttonText?: string;
+  /**
+   * Text to show on the confirm button
+   * Default: "Confirm"
+   */
+  confirmText?: string;
+  /**
+   * Size variant
+   * Default: "md"
+   */
+  size?: "sm" | "md" | "lg";
+  /**
+   * Show icon in button
+   * Default: true
+   */
+  showIcon?: boolean;
+  /**
+   * Additional class names for the container
+   */
+  className?: string;
+  /**
+   * Disable the button
+   */
+  disabled?: boolean;
+  /**
+   * Visual theme variant
+   * Default: "default"
+   */
+  variant?: "default" | "frosted";
+  /**
+   * Callback when expanded state changes
+   */
+  onExpandedChange?: (expanded: boolean) => void;
+}
+
+// Idle state is icon-only (just the red trash can); clicking morphs it into
+// a labeled Confirm pill + a separate Cancel icon button. Both stay compact
+// -- this sits inline in list rows, not as a standalone destructive action.
+const idleSizeVariants = {
+  sm: "h-5 w-5",
+  md: "h-6 w-6",
+  lg: "h-7 w-7",
+};
+
+const expandedSizeVariants = {
+  sm: "h-5 px-1.5 gap-1 text-[11px]",
+  md: "h-6 px-2 gap-1 text-xs",
+  lg: "h-7 px-2.5 gap-1 text-sm",
+};
+
+const iconSizeVariants = {
+  sm: "h-3 w-3",
+  md: "h-3.5 w-3.5",
+  lg: "h-4 w-4",
+};
+
+const cancelButtonSizes = {
+  sm: "h-5 w-5",
+  md: "h-6 w-6",
+  lg: "h-7 w-7",
+};
+
+// Smooth spring preset for natural feel
+const smoothSpring = {
+  type: "spring" as const,
+  bounce: 0,
+  duration: 0.35,
+};
+
+// Adapted from a pasted version that used @base-ui/react's Button with a
+// `nativeButton` prop -- that prop doesn't exist on the current @base-ui/react
+// API (its Button already renders a plain <button> by default), and pulling
+// in a whole new headless-component library just to render a <button> here
+// would've been a dependency with no payoff. Swapped for our own
+// @/components/ui/button, which renders identically.
+export function NativeDelete({
+  onConfirm,
+  onDelete,
+  buttonText = "Delete",
+  confirmText = "Confirm",
+  size = "md",
+  showIcon = true,
+  className,
+  variant = "default",
+  disabled = false,
+  onExpandedChange,
+}: NativeDeleteProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const handleDeleteClick = () => {
+    if (!disabled) {
+      setIsExpanded(true);
+      onConfirm();
+      onExpandedChange?.(true);
+    }
+  };
+
+  const handleConfirm = () => {
+    onDelete();
+    setIsExpanded(false);
+    onExpandedChange?.(false);
+  };
+
+  const handleCancel = () => {
+    setIsExpanded(false);
+    onExpandedChange?.(false);
+  };
+
+  const isFrosted = variant === "frosted";
+
+  return (
+    <MotionConfig transition={smoothSpring}>
+      <motion.div layout className={cn("relative inline-flex items-center gap-1.5 shrink-0", className)}>
+        {/* Main Delete/Confirm button */}
+        <motion.div layout whileTap={!disabled ? { scale: 0.95 } : undefined}>
+          <button
+            type="button"
+            className={cn(
+              "inline-flex items-center justify-center transition-all cursor-pointer select-none shrink-0",
+              isFrosted ? "rounded-lg" : "rounded-md",
+              isExpanded
+                ? cn(
+                    expandedSizeVariants[size],
+                    "bg-destructive text-white hover:bg-destructive/90 shadow-xs",
+                    isFrosted && "border border-red-500/30 backdrop-blur-md"
+                  )
+                : isFrosted
+                ? cn(
+                    idleSizeVariants[size],
+                    "p-0 bg-black/55 hover:bg-red-500/25 text-red-400 hover:text-red-300 border border-white/12 hover:border-red-500/35 backdrop-blur-md shadow-2xs"
+                  )
+                : cn(
+                    idleSizeVariants[size],
+                    "p-0 bg-transparent text-destructive hover:bg-destructive/10"
+                  ),
+              disabled && "opacity-50 cursor-not-allowed"
+            )}
+            onClick={isExpanded ? handleConfirm : handleDeleteClick}
+            disabled={disabled}
+            aria-label={isExpanded ? confirmText : buttonText}
+          >
+            {showIcon && (
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.span
+                  key={isExpanded ? "check-icon" : "trash-icon"}
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.8 }}
+                  transition={{ duration: 0.15 }}
+                  className="flex items-center justify-center shrink-0"
+                >
+                  {isExpanded ? (
+                    <Check className={cn(isFrosted ? "w-3.5 h-3.5 shrink-0" : iconSizeVariants[size])} />
+                  ) : (
+                    <Trash2 className={cn(isFrosted ? "w-3.5 h-3.5 shrink-0" : iconSizeVariants[size])} />
+                  )}
+                </motion.span>
+              </AnimatePresence>
+            )}
+            <AnimatePresence initial={false}>
+              {isExpanded && (
+                <motion.span
+                  key="confirm"
+                  initial={{ opacity: 0, width: 0 }}
+                  animate={{ opacity: 1, width: "auto" }}
+                  exit={{ opacity: 0, width: 0 }}
+                  transition={{ duration: 0.15 }}
+                  className="overflow-hidden whitespace-nowrap ml-1"
+                >
+                  {confirmText}
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </button>
+        </motion.div>
+
+        {/* Cancel button */}
+        <AnimatePresence mode="popLayout">
+          {isExpanded && (
+            <motion.div
+              key="cancel-button"
+              layout
+              initial={{ opacity: 0, scale: 0.8, x: -8 }}
+              animate={{ opacity: 1, scale: 1, x: 0 }}
+              exit={{ opacity: 0, scale: 0.8, x: -8 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <button
+                type="button"
+                className={cn(
+                  cancelButtonSizes[size],
+                  "p-0 inline-flex items-center justify-center transition-all cursor-pointer shrink-0 select-none",
+                  isFrosted
+                    ? "rounded-lg border border-white/15 bg-black/60 hover:bg-white/15 text-white backdrop-blur-md shadow-2xs"
+                    : "rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground"
+                )}
+                onClick={handleCancel}
+                aria-label="Cancel delete"
+              >
+                <X className={cn(isFrosted ? "w-3.5 h-3.5 shrink-0" : iconSizeVariants[size])} />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+    </MotionConfig>
+  );
+}

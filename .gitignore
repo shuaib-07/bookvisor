@@ -1,0 +1,58 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Node dependencies and build outputs
+node_modules
+dist
+dist-ssr
+*.local
+
+# Environment & credentials
+.env
+.env.*
+!.env.example
+
+# Local SQLite databases & test caches
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.db-wal
+*.db-shm
+
+# Internal workspace ignore folder
+/ignore/
+/ignore
+/termizen/
+/termizen
+/dist-extensions/
+/dist-extensions
+
+# Editor directories and OS files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.claude
+.agents
+
+# Rust / Tauri build artifacts
+src-tauri/target/
+**/target/
+src-tauri/**/*.wixobj
+src-tauri/**/*.wixpdb
+src-tauri/**/*.msi
+src-tauri/**/*.exe

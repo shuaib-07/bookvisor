@@ -1,0 +1,187 @@
+.group {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 8px;
+  height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(20, 20, 22, 0.6);
+  backdrop-filter: blur(12px);
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.group:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(26, 26, 30, 0.85);
+}
+
+.secondary {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.primary {
+  display: inline-flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #ffffff;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.primary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.primary:active:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.primarySlot {
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+  height: 100%;
+}
+
+.primaryContent {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.mainIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--primary, #3b82f6);
+}
+
+.iconPhase {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.glyphs {
+  display: inline-flex;
+  align-items: center;
+}
+
+.glyph {
+  display: inline-block;
+  white-space: pre;
+}
+
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 100%;
+  border: none;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.trigger:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.trigger:active:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.chevron {
+  transition: transform 0.2s ease;
+}
+
+.menu {
+  z-index: 100;
+  min-width: 190px;
+  padding: 4px;
+  border-radius: 10px;
+  background: rgba(18, 18, 22, 0.95);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  outline: none;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  outline: none;
+  transition: background-color 0.1s ease, color 0.1s ease;
+  user-select: none;
+}
+
+.item:hover,
+.item[data-highlighted] {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.destructive {
+  color: #f87171;
+}
+
+.destructive:hover,
+.destructive[data-highlighted] {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
