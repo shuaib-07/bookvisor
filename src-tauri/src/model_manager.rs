@@ -48,6 +48,16 @@ pub fn get_model_specs(model_id: &str) -> Option<(&'static str, &'static str, u6
             "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q8_0.gguf",
             94_500_000,
         )),
+        "reasoning_8b" => Some((
+            "DeepSeek-R1-Distill-Qwen-8B-Q4_K_M.gguf",
+            "https://huggingface.co/unsloth/DeepSeek-R1-Distill-Qwen-8B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-8B-Q4_K_M.gguf",
+            4_920_000_000,
+        )),
+        "reasoning_1.5b" => Some((
+            "DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf",
+            "https://huggingface.co/unsloth/DeepSeek-R1-Distill-Qwen-1.5B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf",
+            1_120_000_000,
+        )),
         "pro_7b" => Some((
             "qwen2.5-7b-instruct-q4_k_m.gguf",
             "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct-q4_k_m.gguf",

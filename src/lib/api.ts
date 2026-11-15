@@ -218,11 +218,18 @@ export const api = {
       folderId: folderId || null,
       limit: limit || null,
     }),
-  aiChatQuery: (messages: import("../types").AIChatMessage[], folderId?: string | null) =>
+  aiChatQuery: (
+    messages: import("../types").AIChatMessage[],
+    folderId?: string | null,
+    cloudConfig?: import("../types").CloudAIConfig | null
+  ) =>
     invoke<import("../types").AIChatResponse>("ai_chat_query", {
       messages,
       folderId: folderId || null,
+      cloudConfig: cloudConfig || null,
     }),
+  aiTestCloudConnection: (config: import("../types").CloudAIConfig) =>
+    invoke<string>("ai_test_cloud_connection", { config }),
   getAIChatSessions: () => invoke<AIChatSession[]>("db_get_ai_chat_sessions"),
   createAIChatSession: (title: string, scopeFolderId?: string | null, id?: string) =>
     invoke<AIChatSession>("db_create_ai_chat_session", {

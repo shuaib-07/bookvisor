@@ -4,6 +4,14 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CloudAIConfig {
+    pub provider: String,
+    pub api_key: String,
+    pub model: String,
+    pub base_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProposedFolder {
     pub name: String,
     pub description: String,
@@ -1331,12 +1339,204 @@ fn is_organization_intent(msg: &str) -> bool {
     org_keywords.iter().any(|k| lower.contains(k))
 }
 
+/// Executes queries to external cloud AI providers (OpenAI, Anthropic Claude, Google Gemini, Groq, OpenRouter)
+pub async fn call_cloud_ai(
+    config: &CloudAIConfig,
+    system_prompt: &str,
+    user_prompt: &str,
+) -> Result<String, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(45))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+    let provider = config.provider.to_lowercase();
+    match provider.as_str() {
+        "anthropic" => {
+            let base_url = config
+                .base_url
+                .as_deref()
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or("https://api.anthropic.com");
+            let endpoint = format!("{}/v1/messages", base_url.trim_end_matches('/'));
+            let model = if config.model.trim().is_empty() {
+                "claude-3-5-haiku-20241022"
+            } else {
+                config.model.trim()
+            };
+
+            let payload = serde_json::json!({
+                "model": model,
+                "max_tokens": 4096,
+                "system": system_prompt,
+                "messages": [
+                    { "role": "user", "content": user_prompt }
+                ]
+            });
+
+            let res = client
+                .post(&endpoint)
+                .header("x-api-key", config.api_key.trim())
+                .header("anthropic-version", "2023-06-01")
+                .header("Content-Type", "application/json")
+                .json(&payload)
+                .send()
+                .await
+                .map_err(|e| format!("Anthropic request failed: {}", e))?;
+
+            if !res.status().is_success() {
+                let err_text = res.text().await.unwrap_or_default();
+                return Err(format!("Anthropic API error: {}", err_text));
+            }
+
+            let json: serde_json::Value = res.json().await.map_err(|e| format!("Failed to parse JSON: {}", e))?;
+            if let Some(content_arr) = json["content"].as_array() {
+                for item in content_arr {
+                    if item["type"].as_str() == Some("text") {
+                        if let Some(txt) = item["text"].as_str() {
+                            return Ok(txt.to_string());
+                        }
+                    }
+                }
+            }
+            Err("No text response received from Anthropic".to_string())
+        }
+        "gemini" => {
+            let model = if config.model.trim().is_empty() {
+                "gemini-2.0-flash"
+            } else {
+                config.model.trim().trim_start_matches("models/")
+            };
+            let endpoint = format!(
+                "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+                model,
+                config.api_key.trim()
+            );
+
+            let payload = serde_json::json!({
+                "contents": [
+                    {
+                        "role": "user",
+                        "parts": [{ "text": user_prompt }]
+                    }
+                ],
+                "systemInstruction": {
+                    "parts": [{ "text": system_prompt }]
+                }
+            });
+
+            let res = client
+                .post(&endpoint)
+                .header("Content-Type", "application/json")
+                .json(&payload)
+                .send()
+                .await
+                .map_err(|e| format!("Gemini request failed: {}", e))?;
+
+            if !res.status().is_success() {
+                let err_text = res.text().await.unwrap_or_default();
+                return Err(format!("Gemini API error: {}", err_text));
+            }
+
+            let json: serde_json::Value = res.json().await.map_err(|e| format!("Failed to parse JSON: {}", e))?;
+            if let Some(candidates) = json["candidates"].as_array() {
+                if let Some(cand) = candidates.first() {
+                    if let Some(parts) = cand["content"]["parts"].as_array() {
+                        if let Some(first_part) = parts.first() {
+                            if let Some(txt) = first_part["text"].as_str() {
+                                return Ok(txt.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+            Err("No text response received from Gemini".to_string())
+        }
+        _ => {
+            // OpenAI-compatible providers: "openai", "groq", "openrouter", "custom"
+            let (default_url, default_model) = match provider.as_str() {
+                "groq" => ("https://api.groq.com/openai/v1", "llama-3.3-70b-versatile"),
+                "openrouter" => ("https://openrouter.ai/api/v1", "deepseek/deepseek-r1"),
+                "custom" => ("http://localhost:11434/v1", "default"),
+                _ => ("https://api.openai.com/v1", "gpt-4o-mini"),
+            };
+
+            let base_url = config
+                .base_url
+                .as_deref()
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or(default_url);
+            let endpoint = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+            let model = if config.model.trim().is_empty() {
+                default_model
+            } else {
+                config.model.trim()
+            };
+
+            let payload = serde_json::json!({
+                "model": model,
+                "messages": [
+                    { "role": "system", "content": system_prompt },
+                    { "role": "user", "content": user_prompt }
+                ],
+                "temperature": 0.3
+            });
+
+            let mut req = client
+                .post(&endpoint)
+                .header("Authorization", format!("Bearer {}", config.api_key.trim()))
+                .header("Content-Type", "application/json");
+
+            if provider == "openrouter" {
+                req = req
+                    .header("HTTP-Referer", "https://bookvisor.dev")
+                    .header("X-Title", "BookVisor");
+            }
+
+            let res = req
+                .json(&payload)
+                .send()
+                .await
+                .map_err(|e| format!("Cloud AI request failed: {}", e))?;
+
+            let status = res.status();
+            if !status.is_success() {
+                let err_text = res.text().await.unwrap_or_default();
+                return Err(format!("Cloud API error ({}): {}", status, err_text));
+            }
+
+            let json: serde_json::Value = res.json().await.map_err(|e| format!("Failed to parse JSON: {}", e))?;
+            if let Some(choices) = json["choices"].as_array() {
+                if let Some(first_choice) = choices.first() {
+                    if let Some(content) = first_choice["message"]["content"].as_str() {
+                        return Ok(content.to_string());
+                    }
+                }
+            }
+            Err("No content received from Cloud model".to_string())
+        }
+    }
+}
+
+/// Tests external Cloud AI credentials with a lightweight ping
+#[tauri::command]
+pub async fn ai_test_cloud_connection(config: CloudAIConfig) -> Result<String, String> {
+    if config.api_key.trim().is_empty() {
+        return Err("API key cannot be empty".to_string());
+    }
+    let test_system = "You are a connectivity test assistant. Reply very briefly.";
+    let test_user = "Reply with exactly: BookVisor Cloud AI Connected Successfully.";
+    let response = call_cloud_ai(&config, test_system, test_user).await?;
+    Ok(format!("Connected successfully! Response: {}", response.trim()))
+}
+
 /// Conversational AI query endpoint for natural-language bookmark exploration
 #[tauri::command]
 pub async fn ai_chat_query(
     state: tauri::State<'_, DbState>,
     messages: Vec<AIChatMessage>,
     folder_id: Option<String>,
+    cloud_config: Option<CloudAIConfig>,
 ) -> Result<AIChatResponse, String> {
     let latest_user_msg = messages
         .iter()
@@ -1409,7 +1609,60 @@ pub async fn ai_chat_query(
         }
     }
 
-    let search_results = ai_semantic_search(state, latest_user_msg.clone(), folder_id.clone(), Some(6)).await?;
+    let search_results = ai_semantic_search(state, latest_user_msg.clone(), folder_id.clone(), Some(8)).await?;
+
+    let relevant_bookmarks: Vec<Bookmark> = search_results.iter().map(|r| r.bookmark.clone()).collect();
+    let count = relevant_bookmarks.len();
+
+    // If Cloud AI is enabled and configured, delegate reasoning & answer generation to the cloud model
+    if let Some(ref cloud_cfg) = cloud_config {
+        if !cloud_cfg.api_key.trim().is_empty() {
+            let mut bookmarks_context = String::new();
+            for (idx, item) in search_results.iter().take(8).enumerate() {
+                let title = &item.bookmark.title;
+                let url = &item.bookmark.url;
+                let domain = &item.bookmark.domain;
+                let summary = item.bookmark.scraped_summary.as_deref().unwrap_or("No summary available");
+                let tags = if item.bookmark.tags.is_empty() {
+                    "none".to_string()
+                } else {
+                    item.bookmark.tags.join(", ")
+                };
+                bookmarks_context.push_str(&format!(
+                    "{}. Title: \"{}\" | URL: {} | Domain: {} | Tags: {} | Summary: {}\n",
+                    idx + 1, title, url, domain, tags, summary
+                ));
+            }
+
+            let system_prompt = format!(
+                "You are BookVisor AI Assistant, an expert bookmark manager and knowledge curator.\n\
+                The user is querying bookmarks in their active collection.\n\
+                Here are the relevant saved bookmarks in their scope:\n\
+                ---\n\
+                {}\n\
+                ---\n\
+                Instructions:\n\
+                1. Provide a direct, insightful, and natural conversational answer.\n\
+                2. Explicitly reference relevant links as Markdown links [Title](URL).\n\
+                3. Mention key reasons why each bookmark is helpful.\n\
+                4. Keep the tone helpful, professional, and clear.",
+                if bookmarks_context.is_empty() { "No specific bookmarks matched the current search scope." } else { &bookmarks_context }
+            );
+
+            match call_cloud_ai(cloud_cfg, &system_prompt, &latest_user_msg).await {
+                Ok(cloud_reply) => {
+                    return Ok(AIChatResponse {
+                        reply: cloud_reply,
+                        relevant_bookmarks,
+                        proposed_moves: None,
+                    });
+                }
+                Err(err) => {
+                    eprintln!("Cloud AI query failed: {}, falling back to local formatting", err);
+                }
+            }
+        }
+    }
 
     if search_results.is_empty() {
         let reply = format!(
@@ -1423,9 +1676,6 @@ pub async fn ai_chat_query(
             proposed_moves: None,
         });
     }
-
-    let relevant_bookmarks: Vec<Bookmark> = search_results.iter().map(|r| r.bookmark.clone()).collect();
-    let count = relevant_bookmarks.len();
 
     let mut bullets = String::new();
     for (idx, item) in search_results.iter().take(4).enumerate() {

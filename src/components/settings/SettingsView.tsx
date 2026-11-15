@@ -21,6 +21,9 @@ import {
   Copy,
   Zap,
   Globe,
+  Cloud,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import {
   ZenIcon,
@@ -42,7 +45,7 @@ import {
   type AppCloseBehavior,
 } from "@/lib/closeSettings";
 import { cn } from "@/lib/utils";
-import type { ModelStatus, ZenSyncStatus, DetectedBrowser, DiscoveredProfile } from "@/types";
+import type { ModelStatus, ZenSyncStatus, DetectedBrowser, DiscoveredProfile, CloudProviderId } from "@/types";
 import { AboutView } from "@/components/about/AboutView";
 
 export type ThemeMode = "sefirah" | "deep-blue" | "neutral";
@@ -92,11 +95,30 @@ export function SettingsView({
   );
   const [closeBehavior, setCloseBehavior] = useState<AppCloseBehavior>(getStoredCloseBehavior);
   const [aiTier] = useState<string>(
-    () => localStorage.getItem("bookmanage_ai_tier") || "pro_7b"
+    () => localStorage.getItem("bookmanage_ai_tier") || "reasoning_8b"
   );
   const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null);
   const [zenStatus, setZenStatus] = useState<ZenSyncStatus | null>(null);
   const [resyncing, setResyncing] = useState(false);
+
+  // Cloud AI Settings State
+  const [cloudAIEnabled, setCloudAIEnabled] = useState<boolean>(() => {
+    return localStorage.getItem("bookmanage_cloud_ai_enabled") === "true";
+  });
+  const [cloudProvider, setCloudProvider] = useState<CloudProviderId>(() => {
+    return (localStorage.getItem("bookmanage_cloud_provider") as CloudProviderId) || "openai";
+  });
+  const [cloudApiKey, setCloudApiKey] = useState<string>(() => {
+    return localStorage.getItem("bookmanage_cloud_api_key") || "";
+  });
+  const [cloudModel, setCloudModel] = useState<string>(() => {
+    return localStorage.getItem("bookmanage_cloud_model") || "gpt-4o-mini";
+  });
+  const [cloudBaseUrl, setCloudBaseUrl] = useState<string>(() => {
+    return localStorage.getItem("bookmanage_cloud_base_url") || "";
+  });
+  const [showApiKey, setShowApiKey] = useState<boolean>(false);
+  const [testingCloud, setTestingCloud] = useState<boolean>(false);
 
   const [stripTracking, setStripTracking] = useState<boolean>(() => {
     const val = localStorage.getItem("bookmanage_strip_tracking");
@@ -143,6 +165,44 @@ export function SettingsView({
       status: "success",
     });
     setTimeout(() => setCopiedUrl(null), 2500);
+  };
+
+  const handleTestCloudConnection = async () => {
+    if (!cloudApiKey.trim()) {
+      toast({
+        title: "API Key Required",
+        description: `Please enter a valid API key for ${cloudProvider.toUpperCase()}.`,
+        status: "error",
+      });
+      return;
+    }
+    setTestingCloud(true);
+    try {
+      const res = await api.aiTestCloudConnection({
+        provider: cloudProvider,
+        api_key: cloudApiKey.trim(),
+        model: cloudModel.trim(),
+        base_url: cloudBaseUrl.trim() || null,
+      });
+      localStorage.setItem("bookmanage_cloud_ai_enabled", String(cloudAIEnabled));
+      localStorage.setItem("bookmanage_cloud_provider", cloudProvider);
+      localStorage.setItem("bookmanage_cloud_api_key", cloudApiKey.trim());
+      localStorage.setItem("bookmanage_cloud_model", cloudModel.trim());
+      localStorage.setItem("bookmanage_cloud_base_url", cloudBaseUrl.trim());
+      toast({
+        title: "Cloud AI Connected",
+        description: res,
+        status: "success",
+      });
+    } catch (err: any) {
+      toast({
+        title: "Connection Failed",
+        description: String(err),
+        status: "error",
+      });
+    } finally {
+      setTestingCloud(false);
+    }
   };
 
   const handle1ClickSetup = async (
@@ -598,7 +658,155 @@ export function SettingsView({
           </div>
           <div className="flex items-center justify-between">
             <span>Supported Models:</span>
-            <span className="text-foreground">Qwen 2.5 (7B / 3B / 1.5B) + nomic-embed</span>
+            <span className="text-foreground">DeepSeek-R1 Distill (8B / 1.5B), Qwen 2.5 (7B / 3B / 1.5B), nomic-embed</span>
+          </div>
+        </div>
+      </Card>
+
+      {/* Cloud AI Providers Hub Card */}
+      <Card className="p-4 border border-white/[0.08] bg-card/50 backdrop-blur-xl rounded-xl space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <Cloud className="w-4 h-4 text-sky-400" />
+              <span>Cloud AI Providers Hub (Optional Frontier Models)</span>
+            </h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Connect external API keys to use GPT-4o, Claude 3.7, Gemini 2.0, Groq, or OpenRouter with zero local hardware usage.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground font-medium">Default to Cloud:</span>
+            <Checkbox
+              checked={cloudAIEnabled}
+              onCheckedChange={(checked) => {
+                const next = !!checked;
+                setCloudAIEnabled(next);
+                localStorage.setItem("bookmanage_cloud_ai_enabled", String(next));
+                localStorage.setItem("bookmanage_ai_engine_mode", next ? "cloud" : "local");
+                toast({
+                  title: next ? "Cloud AI Enabled" : "Local AI Mode Restored",
+                  description: next
+                    ? "Queries will default to your configured cloud provider."
+                    : "Queries will run locally using your downloaded GGUF weights.",
+                  status: "neutral",
+                });
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Provider selector grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {[
+            { id: "openai", name: "OpenAI", desc: "GPT-4o, o3-mini", defaultModel: "gpt-4o-mini" },
+            { id: "anthropic", name: "Anthropic Claude", desc: "Claude 3.7 Sonnet, 3.5 Haiku", defaultModel: "claude-3-5-haiku-20241022" },
+            { id: "gemini", name: "Google Gemini", desc: "Gemini 2.0 Flash, 2.5 Pro", defaultModel: "gemini-2.0-flash" },
+            { id: "groq", name: "Groq Cloud", desc: "Ultra-fast DeepSeek R1 / LLaMA", defaultModel: "llama-3.3-70b-versatile" },
+            { id: "openrouter", name: "OpenRouter", desc: "Universal Multi-Model Gateway", defaultModel: "deepseek/deepseek-r1" },
+            { id: "custom", name: "Custom / Local AI", desc: "Ollama / vLLM / OpenAI Compat", defaultModel: "default" },
+          ].map((p) => {
+            const isSelected = cloudProvider === p.id;
+            return (
+              <div
+                key={p.id}
+                onClick={() => {
+                  setCloudProvider(p.id as CloudProviderId);
+                  localStorage.setItem("bookmanage_cloud_provider", p.id);
+                  if (!cloudModel) {
+                    setCloudModel(p.defaultModel);
+                    localStorage.setItem("bookmanage_cloud_model", p.defaultModel);
+                  }
+                }}
+                className={cn(
+                  "p-2.5 rounded-xl border text-left cursor-pointer transition-all select-none",
+                  isSelected
+                    ? "border-sky-500/60 bg-sky-500/10 shadow-xs"
+                    : "border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/[0.12]"
+                )}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-semibold text-foreground">{p.name}</span>
+                  {isSelected && <Check className="w-3.5 h-3.5 text-sky-400" />}
+                </div>
+                <p className="text-[10px] text-muted-foreground">{p.desc}</p>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Credentials Form */}
+        <div className="p-3.5 rounded-xl bg-secondary/30 border border-border/60 space-y-3">
+          <div>
+            <label className="text-xs font-medium text-foreground block mb-1">
+              API Key ({cloudProvider.toUpperCase()})
+            </label>
+            <div className="relative flex items-center">
+              <input
+                type={showApiKey ? "text" : "password"}
+                placeholder={`Paste your ${cloudProvider.toUpperCase()} API key...`}
+                value={cloudApiKey}
+                onChange={(e) => {
+                  setCloudApiKey(e.target.value);
+                  localStorage.setItem("bookmanage_cloud_api_key", e.target.value);
+                }}
+                className="w-full h-8 px-3 pr-10 text-xs rounded-lg bg-background/80 border border-white/[0.1] text-foreground focus:outline-none focus:border-sky-500 font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => setShowApiKey((v) => !v)}
+                className="absolute right-2 p-1 text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                {showApiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-foreground block mb-1">Model Name</label>
+              <input
+                type="text"
+                placeholder="e.g. gpt-4o-mini, claude-3-7-sonnet"
+                value={cloudModel}
+                onChange={(e) => {
+                  setCloudModel(e.target.value);
+                  localStorage.setItem("bookmanage_cloud_model", e.target.value);
+                }}
+                className="w-full h-8 px-3 text-xs rounded-lg bg-background/80 border border-white/[0.1] text-foreground focus:outline-none focus:border-sky-500 font-mono"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-foreground block mb-1">
+                Custom Base URL <span className="text-muted-foreground font-normal">(Optional)</span>
+              </label>
+              <input
+                type="text"
+                placeholder="https://api.openai.com/v1"
+                value={cloudBaseUrl}
+                onChange={(e) => {
+                  setCloudBaseUrl(e.target.value);
+                  localStorage.setItem("bookmanage_cloud_base_url", e.target.value);
+                }}
+                className="w-full h-8 px-3 text-xs rounded-lg bg-background/80 border border-white/[0.1] text-foreground focus:outline-none focus:border-sky-500 font-mono"
+              />
+            </div>
+          </div>
+
+          <div className="pt-2 flex items-center justify-between border-t border-white/[0.06]">
+            <p className="text-[11px] text-muted-foreground">
+              API keys are stored strictly on your local machine in localStorage.
+            </p>
+            <Button
+              size="sm"
+              disabled={testingCloud || !cloudApiKey.trim()}
+              onClick={handleTestCloudConnection}
+              className="h-7 px-3 text-xs gap-1.5 bg-sky-600 hover:bg-sky-500 text-white cursor-pointer"
+            >
+              {testingCloud ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
+              <span>{testingCloud ? "Testing..." : "Test & Save Connection"}</span>
+            </Button>
           </div>
         </div>
       </Card>

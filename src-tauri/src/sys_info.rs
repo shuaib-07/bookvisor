@@ -49,12 +49,9 @@ pub fn get_system_specs() -> SystemSpecs {
 
     let vram = gpu_vram_gb.unwrap_or(0.0);
 
-    // Tiers definition
-    // Tier 1: Qwen 2.5 7B-Instruct (Pro / Deep Reasoning) - requires >= 6GB VRAM or >= 16GB RAM
+    let can_run_8b = (has_cuda && vram >= 6.0) || total_ram_gb >= 16.0;
     let can_run_7b = (has_cuda && vram >= 6.0) || total_ram_gb >= 16.0;
-    // Tier 2: Qwen 2.5 3B-Instruct (Balanced) - requires >= 8GB RAM or >= 3GB VRAM
     let can_run_3b = total_ram_gb >= 7.5 || vram >= 3.0;
-    // Tier 3: Qwen 2.5 1.5B-Instruct (Ultra-Light) - requires >= 4GB RAM
     let can_run_1_5b = total_ram_gb >= 3.5;
 
     let is_recommended_7b = (has_cuda && vram >= 6.0) || total_ram_gb >= 24.0;
@@ -62,35 +59,65 @@ pub fn get_system_specs() -> SystemSpecs {
     let is_recommended_1_5b = !is_recommended_7b && !is_recommended_3b && can_run_1_5b;
 
     let recommended_tier = if is_recommended_7b {
-        "pro_7b".to_string()
+        "reasoning_8b".to_string()
     } else if is_recommended_3b {
         "balanced_3b".to_string()
     } else if is_recommended_1_5b {
-        "light_1.5b".to_string()
+        "reasoning_1.5b".to_string()
     } else {
         "cloud_only".to_string()
     };
 
     let tiers = vec![
         ModelTierInfo {
+            id: "reasoning_8b".to_string(),
+            name: "DeepSeek-R1-Distill-Qwen-8B (Deep Reasoning)".to_string(),
+            parameter_size: "8 Billion parameters".to_string(),
+            download_size: "~4.9 GB".to_string(),
+            min_ram_gb: 16.0,
+            min_vram_gb: 6.0,
+            is_supported: can_run_8b,
+            is_recommended: is_recommended_7b,
+            reason: if is_recommended_7b {
+                if has_cuda {
+                    "Hardware Match! Offloaded to NVIDIA GPU with CUDA for deep chain-of-thought reasoning.".to_string()
+                } else {
+                    "Hardware Match! System has sufficient 16GB+ RAM for deep reasoning.".to_string()
+                }
+            } else if !can_run_8b {
+                "Requires at least 16GB system RAM or a 6GB+ VRAM GPU.".to_string()
+            } else {
+                "Supported. Delivers deep chain-of-thought analysis for complex queries and taxonomy.".to_string()
+            },
+        },
+        ModelTierInfo {
+            id: "reasoning_1.5b".to_string(),
+            name: "DeepSeek-R1-Distill-Qwen-1.5B (Light Reasoning)".to_string(),
+            parameter_size: "1.5 Billion parameters".to_string(),
+            download_size: "~1.1 GB".to_string(),
+            min_ram_gb: 4.0,
+            min_vram_gb: 0.0,
+            is_supported: can_run_1_5b,
+            is_recommended: is_recommended_1_5b,
+            reason: if is_recommended_1_5b {
+                "Recommended for lighter hardware: fast chain-of-thought reasoning with small memory footprint.".to_string()
+            } else {
+                "Lightweight reasoning model (~1.1GB) with chain-of-thought reasoning.".to_string()
+            },
+        },
+        ModelTierInfo {
             id: "pro_7b".to_string(),
-            name: "Qwen 2.5 7B-Instruct (Deep Reasoning)".to_string(),
+            name: "Qwen 2.5 7B-Instruct (General Knowledge)".to_string(),
             parameter_size: "7 Billion parameters".to_string(),
             download_size: "~4.6 GB".to_string(),
             min_ram_gb: 16.0,
             min_vram_gb: 6.0,
             is_supported: can_run_7b,
-            is_recommended: is_recommended_7b,
-            reason: if is_recommended_7b {
-                if has_cuda {
-                    "Hardware Match! Offloaded 100% to NVIDIA GPU with CUDA (~70-90 tok/s).".to_string()
-                } else {
-                    "Hardware Match! System has sufficient 16GB+ RAM for CPU inference.".to_string()
-                }
-            } else if !can_run_7b {
-                "Requires at least 16GB system RAM or a 6GB+ VRAM GPU.".to_string()
+            is_recommended: false,
+            reason: if can_run_7b {
+                "High quality general instruction and coding model.".to_string()
             } else {
-                "Supported, but 3B may be faster for everyday tasks.".to_string()
+                "Requires at least 16GB system RAM or a 6GB+ VRAM GPU.".to_string()
             },
         },
         ModelTierInfo {
@@ -118,23 +145,19 @@ pub fn get_system_specs() -> SystemSpecs {
             min_ram_gb: 4.0,
             min_vram_gb: 0.0,
             is_supported: can_run_1_5b,
-            is_recommended: is_recommended_1_5b,
-            reason: if is_recommended_1_5b {
-                "Recommended for low-spec systems, ultra-portables, or battery saver.".to_string()
-            } else {
-                "Minimal resource footprint (~980MB).".to_string()
-            },
+            is_recommended: false,
+            reason: "Minimal resource footprint (~980MB) for ultra-portable systems.".to_string(),
         },
         ModelTierInfo {
             id: "cloud_only".to_string(),
-            name: "Cloud API Fallback (Groq / OpenAI / OpenRouter)".to_string(),
-            parameter_size: "Cloud Hosted".to_string(),
+            name: "Cloud API Hub (OpenAI, Claude, Gemini, Groq, OpenRouter)".to_string(),
+            parameter_size: "Frontier Cloud Models".to_string(),
             download_size: "0 MB".to_string(),
             min_ram_gb: 0.0,
             min_vram_gb: 0.0,
             is_supported: true,
             is_recommended: !can_run_1_5b,
-            reason: "Bring your own API key. Zero local RAM/GPU required.".to_string(),
+            reason: "Bring your own API key. Access GPT-4o, Claude 3.7, Gemini 2.5, or DeepSeek R1 via cloud.".to_string(),
         },
     ];
 

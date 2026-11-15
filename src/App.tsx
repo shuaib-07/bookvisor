@@ -93,6 +93,10 @@ export default function App() {
   const MIN_INSPECTOR_WIDTH = 340;
   const MAX_INSPECTOR_WIDTH = 640;
 
+  const DEFAULT_AI_PANEL_WIDTH = 440;
+  const MIN_AI_PANEL_WIDTH = 360;
+  const MAX_AI_PANEL_WIDTH = 760;
+
   const [leftSidebarWidth, setLeftSidebarWidth] = useState<number>(() => {
     const saved = localStorage.getItem("bookmanage_left_sidebar_width");
     return saved ? Math.max(MIN_LEFT_WIDTH, Math.min(MAX_LEFT_WIDTH, parseInt(saved, 10))) : DEFAULT_LEFT_WIDTH;
@@ -103,8 +107,40 @@ export default function App() {
     return saved ? Math.max(MIN_INSPECTOR_WIDTH, Math.min(MAX_INSPECTOR_WIDTH, parseInt(saved, 10))) : DEFAULT_INSPECTOR_WIDTH;
   });
 
+  const [aiSidepanelWidth, setAiSidepanelWidth] = useState<number>(() => {
+    const saved = localStorage.getItem("bookmanage_ai_sidepanel_width");
+    return saved ? Math.max(MIN_AI_PANEL_WIDTH, Math.min(MAX_AI_PANEL_WIDTH, parseInt(saved, 10))) : DEFAULT_AI_PANEL_WIDTH;
+  });
+
   const [isDraggingLeft, setIsDraggingLeft] = useState(false);
   const [isDraggingInspector, setIsDraggingInspector] = useState(false);
+  const [isDraggingAiSidepanel, setIsDraggingAiSidepanel] = useState(false);
+
+  const handleAiSidepanelResizeStart = (e: React.PointerEvent) => {
+    e.preventDefault();
+    setIsDraggingAiSidepanel(true);
+    const startX = e.clientX;
+    const startWidth = aiSidepanelWidth;
+
+    const onPointerMove = (ev: PointerEvent) => {
+      const delta = startX - ev.clientX;
+      const newWidth = Math.max(MIN_AI_PANEL_WIDTH, Math.min(MAX_AI_PANEL_WIDTH, startWidth + delta));
+      setAiSidepanelWidth(newWidth);
+    };
+
+    const onPointerUp = () => {
+      setIsDraggingAiSidepanel(false);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      setAiSidepanelWidth((final) => {
+        localStorage.setItem("bookmanage_ai_sidepanel_width", String(final));
+        return final;
+      });
+    };
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+  };
 
   const handleLeftResizeStart = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -1299,36 +1335,51 @@ export default function App() {
             <motion.aside
               key="ai-sidepanel-drawer"
               initial={{ width: 0, opacity: 0, borderColor: "transparent" }}
-              animate={{ width: 420, opacity: 1, borderColor: "rgba(255, 255, 255, 0.06)" }}
+              animate={{ width: aiSidepanelWidth, opacity: 1, borderColor: "rgba(255, 255, 255, 0.06)" }}
               exit={{ width: 0, opacity: 0, borderColor: "transparent" }}
-              transition={SPRING_PANEL}
-              className="border bg-card/60 backdrop-blur-md rounded-xl shrink-0 flex flex-col overflow-hidden shadow-xs select-text"
+              transition={isDraggingAiSidepanel ? { duration: 0 } : SPRING_PANEL}
+              className="relative border bg-card/60 backdrop-blur-md rounded-xl shrink-0 flex flex-col overflow-hidden shadow-xs select-text"
               style={{ minWidth: 0 }}
             >
-              <AISidepanel
-                isOpen={aiSidepanelOpen}
-                onClose={() => setAiSidepanelOpen(false)}
-                currentFolder={currentFolder}
-                activeFilter={activeFilter}
-                scopeFolder={currentFolder}
-                initialTab={aiSidepanelInitialTab}
-                onLibraryChanged={loadData}
-                onLocateBookmark={(b) => {
-                  if (b.folder_id) {
-                    setActiveFolderId(b.folder_id);
-                    setActiveFilter("all");
-                  } else {
-                    setActiveFolderId(null);
-                    setActiveFilter("unorganized");
-                  }
-                  setSelectedBookmark(b);
-                  setTimeout(() => {
-                    const el = document.getElementById(`bookmark-${b.id}`);
-                    el?.scrollIntoView({ behavior: "smooth", block: "center" });
-                  }, 120);
+              {/* Resize Handle on Left Edge */}
+              <div
+                onPointerDown={handleAiSidepanelResizeStart}
+                onDoubleClick={() => {
+                  setAiSidepanelWidth(DEFAULT_AI_PANEL_WIDTH);
+                  localStorage.setItem("bookmanage_ai_sidepanel_width", String(DEFAULT_AI_PANEL_WIDTH));
                 }}
-                onTogglePin={handleTogglePin}
-              />
+                className="group absolute left-0 top-0 bottom-0 w-2 cursor-col-resize z-30 flex items-center justify-center hover:bg-primary/20 active:bg-primary/40 transition-colors select-none"
+                title="Drag to resize AI assistant (double-click to reset)"
+              >
+                <div className="w-[2px] h-8 rounded-full bg-white/20 group-hover:bg-primary group-hover:h-12 transition-all" />
+              </div>
+
+              <div style={{ width: aiSidepanelWidth }} className="h-full flex flex-col shrink-0 overflow-hidden">
+                <AISidepanel
+                  isOpen={aiSidepanelOpen}
+                  onClose={() => setAiSidepanelOpen(false)}
+                  currentFolder={currentFolder}
+                  activeFilter={activeFilter}
+                  scopeFolder={currentFolder}
+                  initialTab={aiSidepanelInitialTab}
+                  onLibraryChanged={loadData}
+                  onLocateBookmark={(b) => {
+                    if (b.folder_id) {
+                      setActiveFolderId(b.folder_id);
+                      setActiveFilter("all");
+                    } else {
+                      setActiveFolderId(null);
+                      setActiveFilter("unorganized");
+                    }
+                    setSelectedBookmark(b);
+                    setTimeout(() => {
+                      const el = document.getElementById(`bookmark-${b.id}`);
+                      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+                    }, 120);
+                  }}
+                  onTogglePin={handleTogglePin}
+                />
+              </div>
             </motion.aside>
           )}
         </AnimatePresence>

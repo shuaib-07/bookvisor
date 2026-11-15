@@ -230,6 +230,15 @@ export interface AIChatResponse {
   proposed_moves?: BookmarkMove[];
 }
 
+export type CloudProviderId = "openai" | "anthropic" | "gemini" | "groq" | "openrouter" | "custom";
+
+export interface CloudAIConfig {
+  provider: CloudProviderId;
+  api_key: string;
+  model: string;
+  base_url?: string | null;
+}
+
 export interface DefaultBrowserInfo {
   id: string;
   name: string;

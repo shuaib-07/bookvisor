@@ -206,6 +206,7 @@ pub fn run() {
             ai_engine::ai_apply_organization_plan,
             ai_engine::ai_semantic_search,
             ai_engine::ai_chat_query,
+            ai_engine::ai_test_cloud_connection,
             ws_server::zen_get_sync_status,
             ws_server::zen_request_browser_sync,
             ws_server::zen_push_tree_mutations,

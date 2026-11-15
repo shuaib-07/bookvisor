@@ -27,6 +27,9 @@ import {
   ChevronUp,
   CheckCircle2,
   RotateCcw,
+  Brain,
+  Cloud,
+  Cpu,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -46,6 +49,8 @@ import type {
   BookmarkMove,
   AIOrganizationPlan,
   AITaxonomyStrategy,
+  CloudAIConfig,
+  CloudProviderId,
 } from "@/types";
 
 interface AISidepanelProps {
@@ -378,6 +383,51 @@ export function AISidepanel({
   const effectiveScopeFolder = scopeToFolder ? targetFolder : null;
   const effectiveFolderId = effectiveScopeFolder ? effectiveScopeFolder.id : null;
 
+  // Model & Engine Mode state
+  const [engineMode, setEngineMode] = useState<"local" | "cloud">(() => {
+    return (localStorage.getItem("bookmanage_ai_engine_mode") as "local" | "cloud") || "local";
+  });
+  const [localTier, setLocalTier] = useState<string>(() => {
+    return localStorage.getItem("bookmanage_ai_tier") || "reasoning_8b";
+  });
+  const [cloudProvider, setCloudProvider] = useState<CloudProviderId>(() => {
+    return (localStorage.getItem("bookmanage_cloud_provider") as CloudProviderId) || "openai";
+  });
+  const [showModelDropdown, setShowModelDropdown] = useState(false);
+
+  const getModelLabel = () => {
+    if (engineMode === "cloud") {
+      switch (cloudProvider) {
+        case "openai":
+          return "OpenAI (GPT-4o)";
+        case "anthropic":
+          return "Claude 3.7";
+        case "gemini":
+          return "Gemini 2.0";
+        case "groq":
+          return "Groq DeepSeek";
+        case "openrouter":
+          return "OpenRouter";
+        default:
+          return "Custom Cloud";
+      }
+    }
+    switch (localTier) {
+      case "reasoning_8b":
+        return "DeepSeek-R1 8B";
+      case "reasoning_1.5b":
+        return "DeepSeek-R1 1.5B";
+      case "pro_7b":
+        return "Qwen 2.5 7B";
+      case "balanced_3b":
+        return "Qwen 2.5 3B";
+      case "light_1.5b":
+        return "Qwen 2.5 1.5B";
+      default:
+        return "Local AI";
+    }
+  };
+
   // Load chat sessions from SQLite
   const loadSessions = useCallback(async () => {
     try {
@@ -565,10 +615,32 @@ export function AISidepanel({
       api.saveAIChatMessage(currentSessionId, "user", text, null).catch(console.error);
     }
 
+    const isCloud = engineMode === "cloud";
+    const apiKey = localStorage.getItem("bookmanage_cloud_api_key") || "";
+
+    if (isCloud && !apiKey.trim()) {
+      toast({
+        title: "API Key Not Found",
+        description: `Please enter your ${cloudProvider.toUpperCase()} API key in Settings > AI & Models.`,
+        status: "error",
+      });
+    }
+
+    const cloudCfg: CloudAIConfig | null =
+      isCloud && apiKey.trim()
+        ? {
+            provider: cloudProvider,
+            api_key: apiKey.trim(),
+            model: localStorage.getItem("bookmanage_cloud_model") || "",
+            base_url: localStorage.getItem("bookmanage_cloud_base_url") || null,
+          }
+        : null;
+
     try {
       const response = await api.aiChatQuery(
         updatedHistory.map((m) => ({ role: m.role, content: m.content })),
-        effectiveFolderId
+        effectiveFolderId,
+        cloudCfg
       );
 
       const assistantMsg = {
@@ -777,7 +849,7 @@ export function AISidepanel({
   if (!isOpen) return null;
 
   return (
-    <div className="w-96 h-full flex flex-col shrink-0 overflow-hidden bg-card/70 backdrop-blur-xl border-l border-white/[0.06] shadow-2xl z-20 select-text">
+    <div className="w-full h-full flex flex-col shrink-0 overflow-hidden bg-card/70 backdrop-blur-xl border-l border-white/[0.06] shadow-2xl z-20 select-text">
       {/* Header */}
       <div className="px-3.5 py-2.5 border-b border-white/[0.06] flex items-center justify-between bg-background/50">
         <div className="flex items-center gap-2">
@@ -794,13 +866,169 @@ export function AISidepanel({
           </div>
         </div>
 
-        <button
-          onClick={onClose}
-          className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors cursor-pointer"
-          aria-label="Close AI panel"
-        >
-          <X className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-1.5">
+          {/* Quick Model / Engine Switcher */}
+          <div className="relative">
+            <button
+              onClick={() => setShowModelDropdown((v) => !v)}
+              className="h-6 px-2 text-[10px] font-medium rounded-md border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-foreground flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Switch Active AI Engine / Model"
+            >
+              {engineMode === "cloud" ? (
+                <Cloud className="w-3 h-3 text-sky-400" />
+              ) : localTier.startsWith("reasoning") ? (
+                <Brain className="w-3 h-3 text-purple-400" />
+              ) : (
+                <Cpu className="w-3 h-3 text-emerald-400" />
+              )}
+              <span className="truncate max-w-[100px]">{getModelLabel()}</span>
+              <ChevronDown className="w-2.5 h-2.5 opacity-60" />
+            </button>
+
+            {showModelDropdown && (
+              <div
+                className="absolute right-0 top-7 w-60 p-1.5 rounded-xl bg-zinc-950/95 border border-white/[0.1] shadow-2xl backdrop-blur-2xl z-50 text-xs space-y-1 animate-in fade-in zoom-in-95"
+                onMouseLeave={() => setShowModelDropdown(false)}
+              >
+                <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                  <Brain className="w-3 h-3 text-purple-400" />
+                  <span>Reasoning Models (Local GGUF)</span>
+                </div>
+                <button
+                  onClick={() => {
+                    setEngineMode("local");
+                    setLocalTier("reasoning_8b");
+                    localStorage.setItem("bookmanage_ai_engine_mode", "local");
+                    localStorage.setItem("bookmanage_ai_tier", "reasoning_8b");
+                    setShowModelDropdown(false);
+                    toast({
+                      title: "Engine Switched",
+                      description: "DeepSeek-R1 Distill 8B selected for deep reasoning.",
+                      status: "success",
+                    });
+                  }}
+                  className={cn(
+                    "w-full px-2 py-1.5 rounded-lg text-left flex items-center justify-between text-xs hover:bg-white/[0.06] transition-colors cursor-pointer",
+                    engineMode === "local" && localTier === "reasoning_8b" && "bg-primary/20 text-primary font-medium"
+                  )}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+                    <span>DeepSeek-R1 Distill 8B</span>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground font-mono">4.9GB</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setEngineMode("local");
+                    setLocalTier("reasoning_1.5b");
+                    localStorage.setItem("bookmanage_ai_engine_mode", "local");
+                    localStorage.setItem("bookmanage_ai_tier", "reasoning_1.5b");
+                    setShowModelDropdown(false);
+                    toast({
+                      title: "Engine Switched",
+                      description: "DeepSeek-R1 Distill 1.5B selected.",
+                      status: "success",
+                    });
+                  }}
+                  className={cn(
+                    "w-full px-2 py-1.5 rounded-lg text-left flex items-center justify-between text-xs hover:bg-white/[0.06] transition-colors cursor-pointer",
+                    engineMode === "local" && localTier === "reasoning_1.5b" && "bg-primary/20 text-primary font-medium"
+                  )}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-purple-300" />
+                    <span>DeepSeek-R1 Distill 1.5B</span>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground font-mono">1.1GB</span>
+                </button>
+
+                <div className="w-full h-[1px] bg-white/[0.06] my-1" />
+
+                <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                  <Cpu className="w-3 h-3 text-emerald-400" />
+                  <span>Fast General Models (Local)</span>
+                </div>
+                {[
+                  { id: "balanced_3b", name: "Qwen 2.5 3B", size: "1.9GB" },
+                  { id: "pro_7b", name: "Qwen 2.5 7B", size: "4.6GB" },
+                  { id: "light_1.5b", name: "Qwen 2.5 1.5B", size: "980MB" },
+                ].map((m) => (
+                  <button
+                    key={m.id}
+                    onClick={() => {
+                      setEngineMode("local");
+                      setLocalTier(m.id);
+                      localStorage.setItem("bookmanage_ai_engine_mode", "local");
+                      localStorage.setItem("bookmanage_ai_tier", m.id);
+                      setShowModelDropdown(false);
+                      toast({
+                        title: "Engine Switched",
+                        description: `${m.name} active for fast responses.`,
+                        status: "success",
+                      });
+                    }}
+                    className={cn(
+                      "w-full px-2 py-1.5 rounded-lg text-left flex items-center justify-between text-xs hover:bg-white/[0.06] transition-colors cursor-pointer",
+                      engineMode === "local" && localTier === m.id && "bg-primary/20 text-primary font-medium"
+                    )}
+                  >
+                    <span>{m.name}</span>
+                    <span className="text-[10px] text-muted-foreground font-mono">{m.size}</span>
+                  </button>
+                ))}
+
+                <div className="w-full h-[1px] bg-white/[0.06] my-1" />
+
+                <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                  <Cloud className="w-3 h-3 text-sky-400" />
+                  <span>Frontier Cloud API Hub</span>
+                </div>
+                {[
+                  { id: "openai", name: "OpenAI (GPT-4o)", model: "gpt-4o-mini" },
+                  { id: "anthropic", name: "Anthropic Claude 3.7", model: "claude-3-5-haiku-20241022" },
+                  { id: "gemini", name: "Google Gemini 2.0", model: "gemini-2.0-flash" },
+                  { id: "groq", name: "Groq (DeepSeek-R1)", model: "deepseek-r1-distill-llama-70b" },
+                  { id: "openrouter", name: "OpenRouter Hub", model: "deepseek/deepseek-r1" },
+                ].map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => {
+                      setEngineMode("cloud");
+                      setCloudProvider(c.id as CloudProviderId);
+                      localStorage.setItem("bookmanage_ai_engine_mode", "cloud");
+                      localStorage.setItem("bookmanage_cloud_provider", c.id);
+                      if (!localStorage.getItem("bookmanage_cloud_model")) {
+                        localStorage.setItem("bookmanage_cloud_model", c.model);
+                      }
+                      setShowModelDropdown(false);
+                      toast({
+                        title: "Cloud Engine Active",
+                        description: `Now using ${c.name}. Make sure your API key is saved in Settings.`,
+                        status: "success",
+                      });
+                    }}
+                    className={cn(
+                      "w-full px-2 py-1.5 rounded-lg text-left flex items-center justify-between text-xs hover:bg-white/[0.06] transition-colors cursor-pointer",
+                      engineMode === "cloud" && cloudProvider === c.id && "bg-sky-500/20 text-sky-400 font-medium"
+                    )}
+                  >
+                    <span>{c.name}</span>
+                    <span className="text-[10px] text-muted-foreground">API</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors cursor-pointer"
+            aria-label="Close AI panel"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Scope Bar */}
