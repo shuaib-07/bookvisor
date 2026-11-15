@@ -52,6 +52,7 @@ interface AISidepanelProps {
   isOpen: boolean;
   onClose: () => void;
   currentFolder: Folder | null;
+  activeFilter?: string;
   onLocateBookmark: (bookmark: Bookmark) => void;
   onTogglePin: (id: string, isPinned: boolean) => void;
   initialTab?: "search" | "chat" | "organize";
@@ -289,6 +290,7 @@ export function AISidepanel({
   isOpen,
   onClose,
   currentFolder,
+  activeFilter,
   onLocateBookmark,
   onTogglePin,
   initialTab,
@@ -297,7 +299,39 @@ export function AISidepanel({
 }: AISidepanelProps) {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<"search" | "chat" | "organize">(initialTab || "search");
-  const [scopeToFolder, setScopeToFolder] = useState<boolean>(Boolean(scopeFolder || currentFolder));
+
+  // Active target folder from props (resolves currentFolder or unorganized stub)
+  const targetFolder = useMemo(() => {
+    if (scopeFolder !== undefined && scopeFolder !== null) return scopeFolder;
+    if (currentFolder) return currentFolder;
+    if (activeFilter === "unorganized") {
+      return {
+        id: "unorganized",
+        title: "Unorganized / Inbox",
+        parent_id: null,
+        browser_guid: null,
+        position: 0,
+        is_locked: false,
+        color: null,
+        icon: null,
+        created_at: "",
+        updated_at: "",
+        is_deleted: false,
+        is_hidden: false,
+      } as Folder;
+    }
+    return null;
+  }, [scopeFolder, currentFolder, activeFilter]);
+
+  // When a folder is open in the main panel, always scope to it by default
+  const [scopeToFolder, setScopeToFolder] = useState<boolean>(true);
+
+  // Automatically sync scopeToFolder to true whenever the target folder changes
+  useEffect(() => {
+    if (targetFolder) {
+      setScopeToFolder(true);
+    }
+  }, [targetFolder?.id]);
 
   useEffect(() => {
     if (initialTab) {
@@ -340,8 +374,8 @@ export function AISidepanel({
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [isApplyingPlan, setIsApplyingPlan] = useState(false);
 
-  // Active folder ID for queries
-  const effectiveScopeFolder = scopeFolder !== undefined ? scopeFolder : (scopeToFolder && currentFolder ? currentFolder : null);
+  // Active folder ID for queries (in sync with main panel)
+  const effectiveScopeFolder = scopeToFolder ? targetFolder : null;
   const effectiveFolderId = effectiveScopeFolder ? effectiveScopeFolder.id : null;
 
   // Load chat sessions from SQLite
@@ -615,10 +649,10 @@ export function AISidepanel({
   };
 
   useEffect(() => {
-    if (activeTab === "organize" && !organizePlan && !isPlanning) {
-      handleGenerateOrganizePlan();
+    if (activeTab === "organize") {
+      handleGenerateOrganizePlan(organizePrompt);
     }
-  }, [activeTab]);
+  }, [activeTab, effectiveFolderId]);
 
   const handleStrategyChange = (strat: AITaxonomyStrategy) => {
     setSelectedStrategyId(strat.id);
@@ -776,12 +810,12 @@ export function AISidepanel({
           <span className="truncate">
             Scope:{" "}
             <strong className="text-foreground font-medium">
-              {scopeToFolder && currentFolder ? `"${currentFolder.title}"` : "Entire Library"}
+              {effectiveScopeFolder ? `"${effectiveScopeFolder.title}"` : "Entire Library"}
             </strong>
           </span>
         </div>
 
-        {currentFolder && (
+        {targetFolder && (
           <button
             onClick={() => {
               setScopeToFolder((v) => !v);

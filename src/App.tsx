@@ -1309,7 +1309,8 @@ export default function App() {
                 isOpen={aiSidepanelOpen}
                 onClose={() => setAiSidepanelOpen(false)}
                 currentFolder={currentFolder}
-                scopeFolder={aiScopeFolder}
+                activeFilter={activeFilter}
+                scopeFolder={currentFolder}
                 initialTab={aiSidepanelInitialTab}
                 onLibraryChanged={loadData}
                 onLocateBookmark={(b) => {
