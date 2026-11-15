@@ -158,6 +158,25 @@ pub async fn ai_generate_organization_plan(
         })
         .collect();
 
+    let mut strategies = Vec::new();
+
+    // If user provided a specific instruction/prompt, build prompt-driven strategy first!
+    if let Some(instruction) = user_instruction.as_deref().filter(|s| !s.trim().is_empty()) {
+        let specs = extract_custom_folder_specs(instruction);
+        if !specs.is_empty() {
+            let strategy_prompt = build_prompt_driven_strategy(
+                &eligible_bookmarks,
+                &folder_name_map,
+                parent_folder_title.as_deref(),
+                instruction,
+                &specs,
+            );
+            if !strategy_prompt.moves.is_empty() {
+                strategies.push(strategy_prompt);
+            }
+        }
+    }
+
     // Strategy 1: Technology & Framework Focused (React, React Native, Vite, Icons, Anime)
     let strategy_tech = build_tech_taxonomy_strategy(
         &eligible_bookmarks,
@@ -165,6 +184,7 @@ pub async fn ai_generate_organization_plan(
         parent_folder_title.as_deref(),
         user_instruction.as_deref(),
     );
+    strategies.push(strategy_tech);
 
     // Strategy 2: Resource Type & Workflow (Component Registries, Icon Packs, Torrents, Docs)
     let strategy_resource = build_resource_taxonomy_strategy(
@@ -173,6 +193,7 @@ pub async fn ai_generate_organization_plan(
         parent_folder_title.as_deref(),
         user_instruction.as_deref(),
     );
+    strategies.push(strategy_resource);
 
     // Strategy 3: Granular Deep Hybrid (Subfolders inside categories)
     let strategy_hybrid = build_hybrid_taxonomy_strategy(
@@ -181,9 +202,10 @@ pub async fn ai_generate_organization_plan(
         parent_folder_title.as_deref(),
         user_instruction.as_deref(),
     );
+    strategies.push(strategy_hybrid);
 
     Ok(AIOrganizationPlan {
-        strategies: vec![strategy_tech, strategy_resource, strategy_hybrid],
+        strategies,
         total_bookmarks_analyzed: eligible_bookmarks.len(),
         locked_folders_preserved,
     })
@@ -323,6 +345,377 @@ fn ensure_folder_path_exists(
     }
 
     current_parent_id.ok_or_else(|| "Failed to create folder path".to_string())
+}
+
+// ── Custom Prompt Extraction & Taxonomy Strategy Builders ───────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomCategorySpec {
+    pub folder_name: String,
+    pub keywords: Vec<String>,
+}
+
+fn split_into_clauses(text: &str) -> Vec<String> {
+    let mut clauses = Vec::new();
+    let normalized = text
+        .replace(" as well as ", ", ")
+        .replace(" and also ", ", ")
+        .replace("; ", ", ")
+        .replace('\n', ", ");
+
+    for part in normalized.split(&[',', '.'][..]) {
+        let trimmed = part.trim();
+        if !trimmed.is_empty() {
+            clauses.push(trimmed.to_string());
+        }
+    }
+    clauses
+}
+
+fn to_clean_title(raw: &str) -> String {
+    let words: Vec<String> = raw
+        .split_whitespace()
+        .map(|w| {
+            let mut chars = w.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+            }
+        })
+        .collect();
+    words.join(" ")
+}
+
+pub fn extract_custom_folder_specs(instruction: &str) -> Vec<CustomCategorySpec> {
+    let lower = instruction.to_lowercase();
+    let clauses = split_into_clauses(&lower);
+    let mut specs = Vec::new();
+
+    for clause in clauses {
+        let mut target = clause.trim().to_string();
+
+        let leading_prefixes = [
+            "i want ", "i would like ", "we want ", "please put ", "put ",
+            "place ", "move ", "keep ", "create a ", "create an ", "create ",
+            "make a ", "make an ", "make ", "separate ", "group by ", "organize by ",
+            "organise by ", "organize into ", "organise into ", "into a ", "in a ",
+            "in ", "into ", "for ", "also ", "and "
+        ];
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for prefix in &leading_prefixes {
+                if target.starts_with(prefix) {
+                    target = target[prefix.len()..].trim().to_string();
+                    changed = true;
+                }
+            }
+        }
+
+        let trailing_suffixes = [
+            " separately in a different folder",
+            " seperately in a different folder",
+            " in a different folder",
+            " in a separate folder",
+            " in a seperate folder",
+            " in a new folder",
+            " into a different folder",
+            " into a separate folder",
+            " into a seperate folder",
+            " into a new folder",
+            " in their own folders",
+            " in their own folder",
+            " into their own folders",
+            " into their own folder",
+            " in its own folder",
+            " in another folder",
+            " in a folder",
+            " into a folder",
+            " in folder",
+            " into folder",
+            " subfolder",
+            " subfolders",
+            " folder",
+            " folders",
+            " directories",
+            " directory",
+            " as well",
+            " separately",
+            " seperately",
+            " websites",
+            " website",
+            " sites",
+            " site",
+            " links",
+            " link",
+            " bookmarks",
+            " bookmark",
+            " pages",
+            " page",
+        ];
+
+        let mut suffix_changed = true;
+        while suffix_changed {
+            suffix_changed = false;
+            for suffix in &trailing_suffixes {
+                if target.ends_with(suffix) {
+                    target = target[..target.len() - suffix.len()].trim().to_string();
+                    suffix_changed = true;
+                }
+            }
+        }
+
+        let target = target.trim();
+        if target.len() < 2 {
+            continue;
+        }
+
+        let (folder_name, keywords) = resolve_folder_spec(target);
+        if !specs.iter().any(|s: &CustomCategorySpec| s.folder_name.eq_ignore_ascii_case(&folder_name)) {
+            specs.push(CustomCategorySpec {
+                folder_name,
+                keywords,
+            });
+        }
+    }
+
+    // Fallback: If no structured clauses matched, split by commas/slashes
+    if specs.is_empty() {
+        for part in instruction.split(&[',', ';', '/'][..]) {
+            let p = part.trim();
+            if p.len() >= 2 && p.len() <= 30 {
+                let (f_name, kws) = resolve_folder_spec(p);
+                if !specs.iter().any(|s: &CustomCategorySpec| s.folder_name.eq_ignore_ascii_case(&f_name)) {
+                    specs.push(CustomCategorySpec {
+                        folder_name: f_name,
+                        keywords: kws,
+                    });
+                }
+            }
+        }
+    }
+
+    specs
+}
+
+fn resolve_folder_spec(raw: &str) -> (String, Vec<String>) {
+    let lower = raw.to_lowercase();
+
+    if lower.contains("inspiration") || lower.contains("inspire") {
+        (
+            "Inspiration".to_string(),
+            vec![
+                "inspiration".into(), "inspire".into(), "showcase".into(), "awwwards".into(),
+                "dribbble".into(), "behance".into(), "gallery".into(), "ideas".into(),
+                "creative".into(), "portfolio".into(), "curated".into(), "framer".into(),
+                "godly".into(), "mobbin".into(), "landbook".into(), "siteinspire".into(),
+            ],
+        )
+    } else if lower.contains("icon") || lower.contains("logo") {
+        (
+            "Icon & Logo Libraries".to_string(),
+            vec![
+                "icon".into(), "icons".into(), "logo".into(), "logos".into(), "svg".into(),
+                "glyph".into(), "symbol".into(), "vector".into(), "lucide".into(),
+                "fontawesome".into(), "tabler".into(), "heroicons".into(), "simpleicons".into(),
+                "feather".into(), "remixicon".into(), "iconify".into(), "flaticon".into(),
+                "thenounproject".into(), "brand".into(), "assets".into(),
+            ],
+        )
+    } else if lower.contains("design") || lower.contains("prompt") {
+        (
+            "Design & Prompts".to_string(),
+            vec![
+                "design".into(), "prompt".into(), "prompts".into(), "ui".into(), "ux".into(),
+                "template".into(), "templates".into(), "figma".into(), "landing".into(),
+                "midjourney".into(), "dall-e".into(), "stablediffusion".into(), "chatgpt".into(),
+                "wireframe".into(), "mockup".into(), "palette".into(), "color".into(),
+                "typeface".into(), "graphic".into(), "pattern".into(), "animation".into(),
+            ],
+        )
+    } else if lower.contains("component") || lower.contains("registry") {
+        (
+            "Component Registries & UI".to_string(),
+            vec![
+                "component".into(), "components".into(), "registry".into(), "shadcn".into(),
+                "radix".into(), "tailwind".into(), "ui".into(), "widget".into(), "library".into(),
+                "reactdrops".into(), "pinui".into(), "21st.dev".into(), "magicui".into(),
+            ],
+        )
+    } else if lower.contains("react") || lower.contains("next") {
+        (
+            "React & Next.js".to_string(),
+            vec![
+                "react".into(), "nextjs".into(), "next.js".into(), "jsx".into(), "tsx".into(),
+                "redux".into(), "zustand".into(), "tanstack".into(), "vite".into(),
+            ],
+        )
+    } else if lower.contains("doc") || lower.contains("documentation") || lower.contains("reference") {
+        (
+            "Documentation & Guides".to_string(),
+            vec![
+                "doc".into(), "docs".into(), "documentation".into(), "reference".into(),
+                "guide".into(), "manual".into(), "handbook".into(), "tutorial".into(),
+                "api".into(), "cheatsheet".into(), "spec".into(),
+            ],
+        )
+    } else if lower.contains("tool") || lower.contains("util") || lower.contains("converter") {
+        (
+            "Tools & Utilities".to_string(),
+            vec![
+                "tool".into(), "tools".into(), "utility".into(), "utilities".into(),
+                "converter".into(), "generator".into(), "formatter".into(), "calculator".into(),
+                "validator".into(), "editor".into(), "checker".into(), "tester".into(),
+            ],
+        )
+    } else if lower.contains("anime") || lower.contains("manga") {
+        (
+            "Anime & Manga".to_string(),
+            vec![
+                "anime".into(), "manga".into(), "crunchyroll".into(), "aniwave".into(),
+                "myanimelist".into(), "stream".into(), "episode".into(), "sub".into(), "dub".into(),
+            ],
+        )
+    } else if lower.contains("torrent") || lower.contains("warez") || lower.contains("download") {
+        (
+            "Torrents & Downloads".to_string(),
+            vec![
+                "torrent".into(), "warez".into(), "magnet".into(), "tracker".into(),
+                "1337x".into(), "piratebay".into(), "fitgirl".into(), "repack".into(),
+            ],
+        )
+    } else {
+        let folder_title = to_clean_title(raw);
+        let mut kws = Vec::new();
+        kws.push(raw.to_lowercase());
+        for word in raw.split_whitespace() {
+            let w = word.to_lowercase();
+            if w.len() >= 3 {
+                kws.push(w.clone());
+                if w.ends_with('s') && w.len() > 3 {
+                    kws.push(w[..w.len() - 1].to_string());
+                } else {
+                    kws.push(format!("{}s", w));
+                }
+            }
+        }
+        (folder_title, kws)
+    }
+}
+
+fn score_bookmark_against_specs<'a>(
+    b: &Bookmark,
+    specs: &'a [CustomCategorySpec],
+) -> Option<(&'a CustomCategorySpec, f64)> {
+    let title_lower = b.title.to_lowercase();
+    let url_lower = b.url.to_lowercase();
+    let domain_lower = b.domain.to_lowercase();
+    let desc_lower = b.description.as_deref().unwrap_or("").to_lowercase();
+    let summary_lower = b.scraped_summary.as_deref().unwrap_or("").to_lowercase();
+    let tags_joined = b.tags.join(" ").to_lowercase();
+
+    let mut best_spec: Option<(&'a CustomCategorySpec, f64)> = None;
+    let mut highest_score = 0.0;
+
+    for spec in specs {
+        let mut score = 0.0;
+        for kw in &spec.keywords {
+            let kw_lower = kw.to_lowercase();
+            if kw_lower.len() < 2 {
+                continue;
+            }
+
+            if domain_lower.contains(&kw_lower) {
+                score += 5.0;
+            }
+            if url_lower.contains(&kw_lower) {
+                score += 4.0;
+            }
+            if title_lower.contains(&kw_lower) {
+                score += 3.5;
+            }
+            if tags_joined.contains(&kw_lower) {
+                score += 3.0;
+            }
+            if desc_lower.contains(&kw_lower) || summary_lower.contains(&kw_lower) {
+                score += 2.0;
+            }
+        }
+
+        if score > highest_score {
+            highest_score = score;
+            best_spec = Some((spec, score));
+        }
+    }
+
+    best_spec.filter(|(_, score)| *score >= 2.5)
+}
+
+fn build_prompt_driven_strategy(
+    bookmarks: &[&Bookmark],
+    folder_name_map: &HashMap<String, String>,
+    parent_prefix: Option<&str>,
+    user_instruction: &str,
+    specs: &[CustomCategorySpec],
+) -> AITaxonomyStrategy {
+    let mut moves = Vec::new();
+
+    for b in bookmarks {
+        let best_match = score_bookmark_against_specs(b, specs);
+        if let Some((spec, _score)) = best_match {
+            let target_folder_path = if let Some(prefix) = parent_prefix {
+                format!("{} / {}", prefix, spec.folder_name)
+            } else {
+                spec.folder_name.clone()
+            };
+
+            let current_folder = b
+                .folder_id
+                .as_ref()
+                .and_then(|fid| folder_name_map.get(fid))
+                .cloned()
+                .unwrap_or_else(|| "Unorganized".to_string());
+
+            let suggested_tag = spec
+                .folder_name
+                .to_lowercase()
+                .replace(" & ", "-")
+                .replace(' ', "-");
+
+            moves.push(BookmarkMove {
+                bookmark_id: b.id.clone(),
+                bookmark_title: b.title.clone(),
+                clean_url: b.clean_url.clone(),
+                current_folder,
+                target_folder_path,
+                suggested_tags: vec![suggested_tag],
+            });
+        }
+    }
+
+    let folder_names: Vec<String> = specs.iter().map(|s| s.folder_name.clone()).collect();
+    let folder_summary = folder_names.join(", ");
+
+    let proposed_tree = specs
+        .iter()
+        .map(|s| ProposedFolder {
+            name: s.folder_name.clone(),
+            description: format!("Created from prompt for {}", s.folder_name),
+            subfolders: vec![],
+        })
+        .collect();
+
+    AITaxonomyStrategy {
+        id: "prompt_tailored".to_string(),
+        name: "Prompt-Tailored Strategy (Your Request)".to_string(),
+        description: format!(
+            "Custom-built from prompt \"{}\". Proposes creating: {}.",
+            user_instruction.trim(),
+            folder_summary
+        ),
+        proposed_tree,
+        moves,
+    }
 }
 
 // ── Taxonomy Strategy Builders ──────────────────────────────────────────────
@@ -723,6 +1116,8 @@ pub struct AIChatMessage {
 pub struct AIChatResponse {
     pub reply: String,
     pub relevant_bookmarks: Vec<Bookmark>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proposed_moves: Option<Vec<BookmarkMove>>,
 }
 
 fn tokenize_query(query: &str) -> Vec<String> {
@@ -923,6 +1318,19 @@ pub async fn ai_semantic_search(
     Ok(scored_results)
 }
 
+fn is_organization_intent(msg: &str) -> bool {
+    let lower = msg.to_lowercase();
+    let org_keywords = [
+        "organize", "organise", "categorize", "categorise",
+        "separate", "group by", "group into", "put in a folder",
+        "put in a different folder", "put in a separate folder",
+        "move to folder", "create folder", "subfolder", "subfolders",
+        "sort into", "in a different folder", "in a separate folder",
+        "in a seperate folder", "in their own folder", "in their own folders",
+    ];
+    org_keywords.iter().any(|k| lower.contains(k))
+}
+
 /// Conversational AI query endpoint for natural-language bookmark exploration
 #[tauri::command]
 pub async fn ai_chat_query(
@@ -941,7 +1349,64 @@ pub async fn ai_chat_query(
         return Ok(AIChatResponse {
             reply: "How can I help you find links in your bookmarks?".to_string(),
             relevant_bookmarks: Vec::new(),
+            proposed_moves: None,
         });
+    }
+
+    // Check for conversational organizing intent
+    if is_organization_intent(&latest_user_msg) {
+        if let Ok(plan) = ai_generate_organization_plan(state.clone(), folder_id.clone(), Some(latest_user_msg.clone())).await {
+            if let Some(strategy) = plan.strategies.first() {
+                if !strategy.moves.is_empty() {
+                    let mut unique_folders: Vec<String> = strategy
+                        .moves
+                        .iter()
+                        .map(|m| {
+                            m.target_folder_path
+                                .split(" / ")
+                                .last()
+                                .unwrap_or(&m.target_folder_path)
+                                .to_string()
+                        })
+                        .collect::<std::collections::HashSet<_>>()
+                        .into_iter()
+                        .collect();
+                    unique_folders.sort();
+
+                    let moves_count = strategy.moves.len();
+                    let reply = format!(
+                        "I analyzed your bookmarks and prepared an organization plan based on your request:\n\n\
+                        • **Proposed Folders:** {}\n\
+                        • **Bookmarks to Move:** {} item{}\n\n\
+                        You can review the proposed folders, toggle individual links, and apply the moves directly below:",
+                        unique_folders.join(", "),
+                        moves_count,
+                        if moves_count == 1 { "" } else { "s" }
+                    );
+
+                    let bookmark_ids: Vec<String> = strategy.moves.iter().map(|m| m.bookmark_id.clone()).collect();
+                    let mut relevant_bookmarks = Vec::new();
+                    if let Ok(conn) = state.conn.lock() {
+                        for bid in bookmark_ids.iter().take(20) {
+                            let query = format!("SELECT {} FROM bookmarks WHERE id = ?1", crate::db::BOOKMARK_SELECT_FIELDS);
+                            if let Ok(mut stmt) = conn.prepare(&query) {
+                                if let Ok(mut rows) = stmt.query_map([bid], crate::db::map_bookmark_row) {
+                                    if let Some(Ok(b)) = rows.next() {
+                                        relevant_bookmarks.push(b);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    return Ok(AIChatResponse {
+                        reply,
+                        relevant_bookmarks,
+                        proposed_moves: Some(strategy.moves.clone()),
+                    });
+                }
+            }
+        }
     }
 
     let search_results = ai_semantic_search(state, latest_user_msg.clone(), folder_id.clone(), Some(6)).await?;
@@ -955,6 +1420,7 @@ pub async fn ai_chat_query(
         return Ok(AIChatResponse {
             reply,
             relevant_bookmarks: Vec::new(),
+            proposed_moves: None,
         });
     }
 
@@ -991,5 +1457,6 @@ pub async fn ai_chat_query(
     Ok(AIChatResponse {
         reply,
         relevant_bookmarks,
+        proposed_moves: None,
     })
 }

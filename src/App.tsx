@@ -71,6 +71,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [aiSidepanelOpen, setAiSidepanelOpen] = useState(false);
+  const [aiSidepanelInitialTab, setAiSidepanelInitialTab] = useState<"search" | "chat" | "organize">("search");
 
   // Hidden Bookmarks & Folders State
   const [showHidden, setShowHidden] = useState<boolean>(() => {
@@ -1133,7 +1134,8 @@ export default function App() {
                   }}
                   onOpenAICategorize={(f) => {
                     setAiScopeFolder(f || null);
-                    setAiWizardOpen(true);
+                    setAiSidepanelInitialTab("organize");
+                    setAiSidepanelOpen(true);
                   }}
                   onOpenConnectWizard={() => setConnectWizardOpen(true)}
                   onSyncDefaultBrowser={handleManualSyncDefaultBrowser}
@@ -1221,7 +1223,8 @@ export default function App() {
               }}
               onOpenAICategorize={(f) => {
                 setAiScopeFolder(f);
-                setAiWizardOpen(true);
+                setAiSidepanelInitialTab("organize");
+                setAiSidepanelOpen(true);
               }}
               onSelectFolder={(fid) => {
                 setActiveFolderId(fid);
@@ -1296,7 +1299,7 @@ export default function App() {
             <motion.aside
               key="ai-sidepanel-drawer"
               initial={{ width: 0, opacity: 0, borderColor: "transparent" }}
-              animate={{ width: 384, opacity: 1, borderColor: "rgba(255, 255, 255, 0.06)" }}
+              animate={{ width: 420, opacity: 1, borderColor: "rgba(255, 255, 255, 0.06)" }}
               exit={{ width: 0, opacity: 0, borderColor: "transparent" }}
               transition={SPRING_PANEL}
               className="border bg-card/60 backdrop-blur-md rounded-xl shrink-0 flex flex-col overflow-hidden shadow-xs select-text"
@@ -1306,6 +1309,9 @@ export default function App() {
                 isOpen={aiSidepanelOpen}
                 onClose={() => setAiSidepanelOpen(false)}
                 currentFolder={currentFolder}
+                scopeFolder={aiScopeFolder}
+                initialTab={aiSidepanelInitialTab}
+                onLibraryChanged={loadData}
                 onLocateBookmark={(b) => {
                   if (b.folder_id) {
                     setActiveFolderId(b.folder_id);

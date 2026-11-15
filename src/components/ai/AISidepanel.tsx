@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Sparkles,
@@ -21,16 +21,32 @@ import {
   Clock,
   Edit2,
   Check,
+  FolderPlus,
+  Folder as FolderIcon,
+  ChevronDown,
+  ChevronUp,
+  CheckCircle2,
+  RotateCcw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { CopyButton } from "@/components/arc/copy-button/copy-button";
+import { useToast } from "@/components/ui/animated-toast-stack";
 import { api } from "@/lib/api";
 import { openExternalUrl } from "@/lib/updater";
 import { PreviewLinkCard } from "@/components/ui/preview-link-card";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
-import type { Bookmark, Folder, AISearchResult, AIChatMessage, AIChatSession } from "@/types";
+import type {
+  Bookmark,
+  Folder,
+  AISearchResult,
+  AIChatMessage,
+  AIChatSession,
+  BookmarkMove,
+  AIOrganizationPlan,
+  AITaxonomyStrategy,
+} from "@/types";
 
 interface AISidepanelProps {
   isOpen: boolean;
@@ -38,6 +54,9 @@ interface AISidepanelProps {
   currentFolder: Folder | null;
   onLocateBookmark: (bookmark: Bookmark) => void;
   onTogglePin: (id: string, isPinned: boolean) => void;
+  initialTab?: "search" | "chat" | "organize";
+  scopeFolder?: Folder | null;
+  onLibraryChanged?: () => void;
 }
 
 const QUICK_PROMPT_PILLS = [
@@ -50,11 +69,200 @@ const QUICK_PROMPT_PILLS = [
   "Free online converters",
 ];
 
-const DEFAULT_WELCOME_MESSAGE: AIChatMessage & { citedBookmarks?: Bookmark[] } = {
+const DEFAULT_WELCOME_MESSAGE: AIChatMessage & {
+  citedBookmarks?: Bookmark[];
+  proposedMoves?: BookmarkMove[];
+} = {
   role: "assistant",
   content:
-    "Hello! I am your AI BookVisor assistant. You can ask me to find any website, tool, or resource from your bookmarks using natural language (e.g. *\"Find a pdf editing tool from my bookmarks\"*).",
+    "Hello! I am your AI BookVisor assistant. You can ask me to find any website, tool, or resource from your bookmarks, or ask me to organize folders (e.g. *\"Separate inspiration, icon libraries, and design tools into different folders\"*).",
 };
+
+function ChatOrganizeActionCard({
+  moves,
+  onApplied,
+}: {
+  moves: BookmarkMove[];
+  onApplied?: () => void;
+}) {
+  const { toast } = useToast();
+  const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>(() => {
+    const map: Record<string, boolean> = {};
+    for (const m of moves) {
+      map[m.bookmark_id] = true;
+    }
+    return map;
+  });
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [isApplying, setIsApplying] = useState(false);
+  const [isApplied, setIsApplied] = useState(false);
+
+  const groupedFolders = useMemo(() => {
+    const map = new Map<string, BookmarkMove[]>();
+    for (const m of moves) {
+      const list = map.get(m.target_folder_path) || [];
+      list.push(m);
+      map.set(m.target_folder_path, list);
+    }
+    return Array.from(map.entries());
+  }, [moves]);
+
+  const selectedCount = moves.filter((m) => selectedIds[m.bookmark_id] !== false).length;
+
+  const handleApply = async () => {
+    const movesToApply = moves.filter((m) => selectedIds[m.bookmark_id] !== false);
+    if (movesToApply.length === 0) return;
+
+    setIsApplying(true);
+    try {
+      await api.aiApplyPlan(movesToApply);
+      setIsApplied(true);
+      toast({
+        title: "Folders Organized",
+        description: `Successfully moved ${movesToApply.length} bookmarks into proposed folders.`,
+        status: "success",
+      });
+      onApplied?.();
+    } catch (err: any) {
+      console.error("Failed to apply moves from chat:", err);
+      toast({
+        title: "Organization Error",
+        description: String(err?.message || err),
+        status: "error",
+      });
+    } finally {
+      setIsApplying(false);
+    }
+  };
+
+  const handleToggleAll = (checked: boolean) => {
+    const next: Record<string, boolean> = {};
+    for (const m of moves) {
+      next[m.bookmark_id] = checked;
+    }
+    setSelectedIds(next);
+  };
+
+  return (
+    <div className="w-full mt-2.5 rounded-xl border border-primary/20 bg-primary/[0.04] p-3 space-y-2.5 text-xs select-none shadow-xs">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="size-6 rounded-lg bg-primary/20 text-primary flex items-center justify-center">
+            <FolderPlus className="size-3.5" />
+          </div>
+          <div>
+            <div className="font-semibold text-foreground text-xs flex items-center gap-1.5">
+              <span>Proposed Folder Plan</span>
+              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-primary/20 text-primary font-semibold">
+                {groupedFolders.length} folders
+              </span>
+            </div>
+            <div className="text-[11px] text-muted-foreground">
+              {selectedCount} of {moves.length} moves selected
+            </div>
+          </div>
+        </div>
+
+        <button
+          onClick={() => setIsExpanded((v) => !v)}
+          className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors cursor-pointer"
+          title={isExpanded ? "Collapse link list" : "Expand link list"}
+        >
+          {isExpanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+        </button>
+      </div>
+
+      <div className="flex flex-wrap gap-1.5 pt-0.5">
+        {groupedFolders.map(([folderPath, items]) => {
+          const shortName = folderPath.split(" / ").pop() || folderPath;
+          return (
+            <span
+              key={folderPath}
+              className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-lg bg-white/[0.06] border border-white/[0.08] text-foreground font-medium"
+            >
+              <FolderIcon className="size-3 text-primary shrink-0" />
+              <span className="truncate max-w-[140px]">{shortName}</span>
+              <span className="text-[10px] text-muted-foreground font-mono">({items.length})</span>
+            </span>
+          );
+        })}
+      </div>
+
+      {isExpanded && (
+        <div className="space-y-1 pt-1 max-h-52 overflow-y-auto pr-1 border-t border-white/[0.04]">
+          <div className="flex items-center justify-between text-[11px] pb-1">
+            <button
+              onClick={() => handleToggleAll(selectedCount !== moves.length)}
+              className="text-primary hover:underline cursor-pointer"
+            >
+              {selectedCount === moves.length ? "Deselect All" : "Select All"}
+            </button>
+            <span className="text-muted-foreground font-mono text-[10px]">{selectedCount} items</span>
+          </div>
+
+          {moves.map((m) => {
+            const isChecked = selectedIds[m.bookmark_id] !== false;
+            const targetName = m.target_folder_path.split(" / ").pop() || m.target_folder_path;
+            return (
+              <label
+                key={m.bookmark_id}
+                className="flex items-center gap-2 p-1.5 rounded-lg bg-white/[0.02] hover:bg-white/[0.05] cursor-pointer transition-colors"
+              >
+                <input
+                  type="checkbox"
+                  checked={isChecked}
+                  onChange={(e) =>
+                    setSelectedIds((prev) => ({
+                      ...prev,
+                      [m.bookmark_id]: e.target.checked,
+                    }))
+                  }
+                  className="rounded border-white/20 text-primary focus:ring-primary/40 size-3"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-medium text-foreground truncate">{m.bookmark_title}</div>
+                  <div className="text-[10px] text-muted-foreground flex items-center gap-1 truncate font-mono">
+                    <span>{m.current_folder}</span>
+                    <span>→</span>
+                    <span className="text-primary font-medium">{targetName}</span>
+                  </div>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="pt-1 flex items-center justify-end gap-2 border-t border-white/[0.06]">
+        {isApplied ? (
+          <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium py-1">
+            <CheckCircle2 className="size-4" />
+            <span>Applied Successfully!</span>
+          </div>
+        ) : (
+          <Button
+            size="sm"
+            onClick={handleApply}
+            disabled={isApplying || selectedCount === 0}
+            className="h-7 text-xs bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-3 cursor-pointer gap-1.5"
+          >
+            {isApplying ? (
+              <>
+                <Loader2 className="size-3 animate-spin" />
+                <span>Applying...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="size-3" />
+                <span>Apply Moves ({selectedCount})</span>
+              </>
+            )}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function formatRelativeTime(dateString: string): string {
   try {
@@ -83,9 +291,19 @@ export function AISidepanel({
   currentFolder,
   onLocateBookmark,
   onTogglePin,
+  initialTab,
+  scopeFolder,
+  onLibraryChanged,
 }: AISidepanelProps) {
-  const [activeTab, setActiveTab] = useState<"search" | "chat">("search");
-  const [scopeToFolder, setScopeToFolder] = useState<boolean>(false);
+  const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState<"search" | "chat" | "organize">(initialTab || "search");
+  const [scopeToFolder, setScopeToFolder] = useState<boolean>(Boolean(scopeFolder || currentFolder));
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
@@ -104,14 +322,27 @@ export function AISidepanel({
 
   // Chat Messages state
   const [chatMessages, setChatMessages] = useState<
-    Array<AIChatMessage & { citedBookmarks?: Bookmark[] }>
+    Array<AIChatMessage & { citedBookmarks?: Bookmark[]; proposedMoves?: BookmarkMove[] }>
   >([DEFAULT_WELCOME_MESSAGE]);
   const [chatInput, setChatInput] = useState("");
   const [isChatLoading, setIsChatLoading] = useState(false);
   const chatScrollRef = useRef<HTMLDivElement>(null);
 
+  // Organize Cockpit state
+  const [organizePrompt, setOrganizePrompt] = useState("");
+  const [isPlanning, setIsPlanning] = useState(false);
+  const [organizePlan, setOrganizePlan] = useState<AIOrganizationPlan | null>(null);
+  const [selectedStrategyId, setSelectedStrategyId] = useState<string>("prompt_tailored");
+  const [activeCategoryFilter, setActiveCategoryFilter] = useState<string | null>(null);
+  const [selectedMoveIds, setSelectedMoveIds] = useState<Record<string, boolean>>({});
+  const [customFolderNames, setCustomFolderNames] = useState<Record<string, string>>({});
+  const [reassignedTargets, setReassignedTargets] = useState<Record<string, string>>({});
+  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
+  const [isApplyingPlan, setIsApplyingPlan] = useState(false);
+
   // Active folder ID for queries
-  const effectiveFolderId = scopeToFolder && currentFolder ? currentFolder.id : null;
+  const effectiveScopeFolder = scopeFolder !== undefined ? scopeFolder : (scopeToFolder && currentFolder ? currentFolder : null);
+  const effectiveFolderId = effectiveScopeFolder ? effectiveScopeFolder.id : null;
 
   // Load chat sessions from SQLite
   const loadSessions = useCallback(async () => {
@@ -310,6 +541,7 @@ export function AISidepanel({
         role: "assistant" as const,
         content: response.reply,
         citedBookmarks: response.relevant_bookmarks,
+        proposedMoves: response.proposed_moves,
       };
 
       setChatMessages((prev) => [...prev, assistantMsg]);
@@ -345,6 +577,168 @@ export function AISidepanel({
       chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
     }
   }, [chatMessages, isChatLoading]);
+
+  // Generate Organize Plan
+  const handleGenerateOrganizePlan = async (instruction?: string) => {
+    setIsPlanning(true);
+    try {
+      const scopeId = effectiveScopeFolder ? effectiveScopeFolder.id : null;
+      const res = await api.aiGeneratePlan(scopeId, instruction || null);
+      setOrganizePlan(res);
+
+      if (res.strategies.length > 0) {
+        const topStrat = res.strategies[0];
+        setSelectedStrategyId(topStrat.id);
+
+        const selMap: Record<string, boolean> = {};
+        const expMap: Record<string, boolean> = {};
+        for (const m of topStrat.moves) {
+          selMap[m.bookmark_id] = true;
+          expMap[m.target_folder_path] = true;
+        }
+        setSelectedMoveIds(selMap);
+        setExpandedFolders(expMap);
+        setActiveCategoryFilter(null);
+        setCustomFolderNames({});
+        setReassignedTargets({});
+      }
+    } catch (err: any) {
+      console.error("AI Organize plan generation failed:", err);
+      toast({
+        title: "Plan Generation Failed",
+        description: String(err?.message || err),
+        status: "error",
+      });
+    } finally {
+      setIsPlanning(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "organize" && !organizePlan && !isPlanning) {
+      handleGenerateOrganizePlan();
+    }
+  }, [activeTab]);
+
+  const handleStrategyChange = (strat: AITaxonomyStrategy) => {
+    setSelectedStrategyId(strat.id);
+    const selMap: Record<string, boolean> = {};
+    const expMap: Record<string, boolean> = {};
+    for (const m of strat.moves) {
+      selMap[m.bookmark_id] = true;
+      expMap[m.target_folder_path] = true;
+    }
+    setSelectedMoveIds(selMap);
+    setExpandedFolders(expMap);
+    setActiveCategoryFilter(null);
+    setCustomFolderNames({});
+    setReassignedTargets({});
+  };
+
+  const currentStrategy =
+    organizePlan?.strategies.find((s) => s.id === selectedStrategyId) ||
+    organizePlan?.strategies[0];
+
+  const groupedFolderMoves = useMemo(() => {
+    if (!currentStrategy) return [];
+    const map = new Map<string, BookmarkMove[]>();
+    for (const m of currentStrategy.moves) {
+      const target = reassignedTargets[m.bookmark_id] ?? m.target_folder_path;
+      if (target === "__KEEP_CURRENT__") continue;
+      const list = map.get(target) || [];
+      list.push(m);
+      map.set(target, list);
+    }
+    return Array.from(map.entries());
+  }, [currentStrategy, reassignedTargets]);
+
+  const allProposedFolderPaths = useMemo(() => {
+    if (!currentStrategy) return [];
+    const set = new Set<string>();
+    for (const m of currentStrategy.moves) {
+      set.add(m.target_folder_path);
+    }
+    for (const t of Object.values(reassignedTargets)) {
+      if (t !== "__KEEP_CURRENT__") {
+        set.add(t);
+      }
+    }
+    return Array.from(set);
+  }, [currentStrategy, reassignedTargets]);
+
+  const filteredGroupedMoves = useMemo(() => {
+    if (!activeCategoryFilter) return groupedFolderMoves;
+    return groupedFolderMoves.filter(([folderPath]) => folderPath === activeCategoryFilter);
+  }, [groupedFolderMoves, activeCategoryFilter]);
+
+  const totalMovesCount = currentStrategy ? currentStrategy.moves.length : 0;
+  const totalSelectedCount = useMemo(() => {
+    if (!currentStrategy) return 0;
+    return currentStrategy.moves.filter((m) => {
+      const target = reassignedTargets[m.bookmark_id] ?? m.target_folder_path;
+      if (target === "__KEEP_CURRENT__") return false;
+      return selectedMoveIds[m.bookmark_id] !== false;
+    }).length;
+  }, [currentStrategy, selectedMoveIds, reassignedTargets]);
+
+  const handleApplyOrganizePlan = async () => {
+    if (!currentStrategy) return;
+    setIsApplyingPlan(true);
+    try {
+      const finalMovesToApply: BookmarkMove[] = [];
+      for (const m of currentStrategy.moves) {
+        if (selectedMoveIds[m.bookmark_id] === false) continue;
+        const target = reassignedTargets[m.bookmark_id] ?? m.target_folder_path;
+        if (target === "__KEEP_CURRENT__") continue;
+
+        let resolvedPath = target;
+        for (const [orig, edited] of Object.entries(customFolderNames)) {
+          if (orig === target && edited.trim()) {
+            const parts = target.split(" / ");
+            if (parts.length > 1) {
+              parts[parts.length - 1] = edited.trim();
+              resolvedPath = parts.join(" / ");
+            } else {
+              resolvedPath = edited.trim();
+            }
+          }
+        }
+
+        finalMovesToApply.push({
+          ...m,
+          target_folder_path: resolvedPath,
+        });
+      }
+
+      if (finalMovesToApply.length === 0) {
+        toast({
+          title: "No moves selected",
+          description: "Select at least one bookmark move to apply.",
+          status: "error",
+        });
+        setIsApplyingPlan(false);
+        return;
+      }
+
+      await api.aiApplyPlan(finalMovesToApply);
+      toast({
+        title: "AI Organization Applied",
+        description: `Successfully organized ${finalMovesToApply.length} bookmarks into new folders.`,
+        status: "success",
+      });
+      onLibraryChanged?.();
+      handleGenerateOrganizePlan(organizePrompt);
+    } catch (err: any) {
+      console.error("Failed to apply organize plan:", err);
+      toast({
+        title: "Failed to apply changes",
+        description: String(err?.message || err),
+        status: "error",
+      });
+    } finally {
+      setIsApplyingPlan(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -404,7 +798,7 @@ export function AISidepanel({
 
       {/* Top Mode Switcher Tabs (Animated matching Left Sidebar) */}
       <div className="p-2 border-b border-white/[0.06] bg-black/20">
-        <div className="grid grid-cols-2 p-0.5 rounded-xl bg-black/40 border border-white/[0.06] relative">
+        <div className="grid grid-cols-3 p-0.5 rounded-xl bg-black/40 border border-white/[0.06] relative">
           <button
             type="button"
             onClick={() => {
@@ -419,7 +813,7 @@ export function AISidepanel({
             )}
           >
             <Search className="w-3.5 h-3.5" />
-            <span>Semantic Search</span>
+            <span>Search</span>
             {activeTab === "search" && (
               <motion.div
                 layoutId="ai-sidebar-mode-indicator"
@@ -440,8 +834,32 @@ export function AISidepanel({
             )}
           >
             <Bot className="w-3.5 h-3.5" />
-            <span>Interactive Chat</span>
+            <span>Chat</span>
             {activeTab === "chat" && (
+              <motion.div
+                layoutId="ai-sidebar-mode-indicator"
+                className="absolute inset-0 bg-white/10 rounded-lg -z-10 shadow-xs border border-white/10"
+                transition={{ type: "spring", stiffness: 450, damping: 30 }}
+              />
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab("organize");
+              setIsHistoryOpen(false);
+            }}
+            className={cn(
+              "relative z-10 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer",
+              activeTab === "organize"
+                ? "text-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <FolderPlus className="w-3.5 h-3.5" />
+            <span>Organize</span>
+            {activeTab === "organize" && (
               <motion.div
                 layoutId="ai-sidebar-mode-indicator"
                 className="absolute inset-0 bg-white/10 rounded-lg -z-10 shadow-xs border border-white/10"
@@ -863,6 +1281,14 @@ export function AISidepanel({
                     ))}
                   </div>
                 )}
+
+                {/* Proposed Moves / Organize Action Card inside Chat */}
+                {msg.proposedMoves && msg.proposedMoves.length > 0 && (
+                  <ChatOrganizeActionCard
+                    moves={msg.proposedMoves}
+                    onApplied={onLibraryChanged}
+                  />
+                )}
               </div>
             ))}
 
@@ -930,6 +1356,342 @@ export function AISidepanel({
         </div>
       );
     })()}
+
+      {/* Mode 3: AI Organize Cockpit */}
+      {activeTab === "organize" && (
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          {/* Header & Prompt Refinement */}
+          <div className="p-3 border-b border-white/[0.04] space-y-2.5 bg-black/10 shrink-0">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-foreground flex items-center gap-1.5">
+                <FolderPlus className="size-3.5 text-primary" />
+                <span>Interactive AI Organize</span>
+              </span>
+              <span className="text-[10px] text-muted-foreground font-mono">
+                {effectiveScopeFolder ? `Folder: ${effectiveScopeFolder.title}` : "All Bookmarks"}
+              </span>
+            </div>
+
+            <div className="relative flex items-center">
+              <input
+                type="text"
+                value={organizePrompt}
+                onChange={(e) => setOrganizePrompt(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !isPlanning) {
+                    handleGenerateOrganizePlan(organizePrompt);
+                  }
+                }}
+                placeholder='e.g. "Inspiration in a folder, icon library in another..."'
+                className="w-full pl-3 pr-22 py-2 text-xs rounded-xl bg-white/[0.04] border border-white/[0.08] focus:border-primary/50 focus:ring-1 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground/60 outline-none transition-all shadow-inner"
+              />
+              <Button
+                size="sm"
+                onClick={() => handleGenerateOrganizePlan(organizePrompt)}
+                disabled={isPlanning}
+                className="absolute right-1 h-6 text-[10px] px-2.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-semibold cursor-pointer gap-1"
+              >
+                {isPlanning ? (
+                  <Loader2 className="size-3 animate-spin" />
+                ) : (
+                  <Sparkles className="size-3" />
+                )}
+                <span>Organize</span>
+              </Button>
+            </div>
+
+            {/* Quick Example Prompt Pills */}
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+              {[
+                "Inspiration, Icons, and Design in separate folders",
+                "Group by Frameworks & Libraries",
+                "Documentation vs Tools & Utilities",
+                "Torrents & Downloads in separate folder",
+              ].map((pill) => (
+                <button
+                  key={pill}
+                  onClick={() => {
+                    setOrganizePrompt(pill);
+                    handleGenerateOrganizePlan(pill);
+                  }}
+                  className="text-[10px] whitespace-nowrap px-2 py-0.5 rounded-full bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
+                >
+                  {pill}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Strategy Tabs / Switcher (if available) */}
+          {organizePlan && organizePlan.strategies.length > 1 && (
+            <div className="px-3 py-1.5 border-b border-white/[0.04] bg-white/[0.01] flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
+              {organizePlan.strategies.map((strat) => {
+                const isSelected = strat.id === selectedStrategyId;
+                return (
+                  <button
+                    key={strat.id}
+                    onClick={() => handleStrategyChange(strat)}
+                    className={cn(
+                      "text-[10px] font-medium px-2 py-0.5 rounded-lg border transition-colors cursor-pointer shrink-0 flex items-center gap-1",
+                      isSelected
+                        ? "bg-primary/20 text-primary border-primary/40 font-semibold"
+                        : "bg-white/[0.03] text-muted-foreground hover:text-foreground border-white/[0.06]"
+                    )}
+                  >
+                    <span>{strat.name}</span>
+                    <span className="font-mono text-[9px] opacity-75">({strat.moves.length})</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Top Quick-Filter Suggestion Chips */}
+          {allProposedFolderPaths.length > 0 && (
+            <div className="px-3 py-1.5 border-b border-white/[0.04] bg-black/20 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
+              <button
+                onClick={() => setActiveCategoryFilter(null)}
+                className={cn(
+                  "text-[10px] font-medium px-2 py-0.5 rounded-full border transition-colors cursor-pointer shrink-0 flex items-center gap-1",
+                  activeCategoryFilter === null
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-white/[0.04] text-muted-foreground hover:text-foreground border-white/[0.08]"
+                )}
+              >
+                <span>All Folders</span>
+                <span className="font-mono text-[9px] opacity-80">
+                  ({totalSelectedCount}/{totalMovesCount})
+                </span>
+              </button>
+
+              {allProposedFolderPaths.map((fPath) => {
+                const displayName = customFolderNames[fPath] || fPath.split(" / ").pop() || fPath;
+                const count = (groupedFolderMoves.find(([p]) => p === fPath)?.[1] || []).length;
+                const isSelected = activeCategoryFilter === fPath;
+
+                return (
+                  <button
+                    key={fPath}
+                    onClick={() => setActiveCategoryFilter(isSelected ? null : fPath)}
+                    className={cn(
+                      "text-[10px] font-medium px-2 py-0.5 rounded-full border transition-colors cursor-pointer shrink-0 flex items-center gap-1",
+                      isSelected
+                        ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                        : "bg-white/[0.04] text-muted-foreground hover:text-foreground border-white/[0.08]"
+                    )}
+                  >
+                    <FolderPlus className="size-2.5 shrink-0" />
+                    <span className="truncate max-w-[120px]">{displayName}</span>
+                    <span className="font-mono text-[9px] opacity-80">({count})</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Plan Content List */}
+          <div className="flex-1 overflow-y-auto px-3 py-2.5 space-y-2.5">
+            {isPlanning && (
+              <div className="py-16 flex flex-col items-center justify-center text-muted-foreground gap-2">
+                <Loader2 className="size-5 animate-spin text-primary" />
+                <span className="text-xs">Analyzing links & designing folder structure...</span>
+              </div>
+            )}
+
+            {!isPlanning && filteredGroupedMoves.length === 0 && (
+              <div className="py-16 flex flex-col items-center justify-center text-center px-4 text-muted-foreground gap-2">
+                <FolderPlus className="size-8 stroke-[1.2] opacity-40 text-primary" />
+                <div className="text-xs font-semibold text-foreground">No moves proposed</div>
+                <div className="text-[11px] leading-relaxed max-w-xs">
+                  {organizePrompt
+                    ? "Try adjusting your prompt keywords or asking for broader categories."
+                    : "Enter a prompt above or click one of the quick suggestions to auto-organize your bookmarks."}
+                </div>
+              </div>
+            )}
+
+            {!isPlanning &&
+              filteredGroupedMoves.map(([folderPath, moves]) => {
+                const isExpanded = expandedFolders[folderPath] !== false;
+                const currentDisplayName =
+                  customFolderNames[folderPath] ?? (folderPath.split(" / ").pop() || folderPath);
+                const allFolderChecked = moves.every((m) => selectedMoveIds[m.bookmark_id] !== false);
+                const someFolderChecked = moves.some((m) => selectedMoveIds[m.bookmark_id] !== false);
+
+                return (
+                  <div
+                    key={folderPath}
+                    className="rounded-xl border border-white/[0.07] bg-white/[0.02] overflow-hidden space-y-1 shadow-xs"
+                  >
+                    {/* Folder Card Header */}
+                    <div className="p-2.5 flex items-center justify-between gap-2 bg-white/[0.02] hover:bg-white/[0.04] transition-colors">
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <input
+                          type="checkbox"
+                          checked={allFolderChecked}
+                          ref={(el) => {
+                            if (el) el.indeterminate = someFolderChecked && !allFolderChecked;
+                          }}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setSelectedMoveIds((prev) => {
+                              const next = { ...prev };
+                              for (const m of moves) {
+                                next[m.bookmark_id] = checked;
+                              }
+                              return next;
+                            });
+                          }}
+                          className="size-3.5 rounded border-white/20 text-primary focus:ring-primary/40 cursor-pointer"
+                        />
+
+                        <FolderPlus className="size-3.5 text-primary shrink-0" />
+
+                        {/* Editable Folder Name */}
+                        <input
+                          type="text"
+                          value={currentDisplayName}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setCustomFolderNames((prev) => ({
+                              ...prev,
+                              [folderPath]: val,
+                            }));
+                          }}
+                          className="text-xs font-semibold text-foreground bg-transparent border-b border-transparent hover:border-white/20 focus:border-primary focus:bg-black/30 px-1 py-0.5 rounded outline-none min-w-0 flex-1 truncate"
+                          title="Click to rename proposed folder"
+                        />
+
+                        <span className="text-[10px] text-muted-foreground font-mono shrink-0 px-1.5 py-0.2 rounded-full bg-white/[0.06]">
+                          {moves.length}
+                        </span>
+                      </div>
+
+                      <button
+                        onClick={() =>
+                          setExpandedFolders((prev) => ({
+                            ...prev,
+                            [folderPath]: !isExpanded,
+                          }))
+                        }
+                        className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
+                      >
+                        {isExpanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                      </button>
+                    </div>
+
+                    {/* Bookmarks List */}
+                    {isExpanded && (
+                      <div className="px-2.5 pb-2 pt-0.5 space-y-1.5 border-t border-white/[0.04]">
+                        {moves.map((m) => {
+                          const isChecked = selectedMoveIds[m.bookmark_id] !== false;
+                          return (
+                            <div
+                              key={m.bookmark_id}
+                              className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-black/20 hover:bg-white/[0.03] transition-colors group"
+                            >
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={(e) =>
+                                    setSelectedMoveIds((prev) => ({
+                                      ...prev,
+                                      [m.bookmark_id]: e.target.checked,
+                                    }))
+                                  }
+                                  className="size-3 rounded border-white/20 text-primary focus:ring-primary/40 cursor-pointer"
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <div
+                                    onClick={() => onLocateBookmark({ id: m.bookmark_id } as any)}
+                                    className="text-[11px] font-medium text-foreground truncate hover:text-primary transition-colors cursor-pointer"
+                                    title={m.bookmark_title}
+                                  >
+                                    {m.bookmark_title}
+                                  </div>
+                                  <div className="text-[9px] text-muted-foreground truncate font-mono">
+                                    {m.clean_url}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Inline Reassignment Dropdown */}
+                              <select
+                                value={reassignedTargets[m.bookmark_id] ?? m.target_folder_path}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setReassignedTargets((prev) => ({
+                                    ...prev,
+                                    [m.bookmark_id]: val,
+                                  }));
+                                }}
+                                className="text-[10px] bg-white/[0.04] border border-white/[0.08] rounded px-1.5 py-0.5 text-muted-foreground hover:text-foreground focus:border-primary outline-none max-w-[110px] truncate cursor-pointer"
+                                title="Move to another folder"
+                              >
+                                {allProposedFolderPaths.map((pathOption) => {
+                                  const optName =
+                                    customFolderNames[pathOption] ||
+                                    pathOption.split(" / ").pop() ||
+                                    pathOption;
+                                  return (
+                                    <option
+                                      key={pathOption}
+                                      value={pathOption}
+                                      className="bg-zinc-900 text-zinc-200"
+                                    >
+                                      {optName}
+                                    </option>
+                                  );
+                                })}
+                                <option value="__KEEP_CURRENT__" className="bg-zinc-900 text-zinc-400">
+                                  (Keep in current)
+                                </option>
+                              </select>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+          </div>
+
+          {/* Sticky Bottom Action Bar */}
+          <div className="p-2.5 border-t border-white/[0.06] bg-black/40 flex items-center justify-between gap-2 shrink-0">
+            <button
+              onClick={() => {
+                setOrganizePrompt("");
+                handleGenerateOrganizePlan("");
+              }}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer flex items-center gap-1"
+            >
+              <RotateCcw className="size-3" />
+              <span>Reset</span>
+            </button>
+
+            <Button
+              size="sm"
+              onClick={handleApplyOrganizePlan}
+              disabled={isApplyingPlan || totalSelectedCount === 0}
+              className="h-8 text-xs bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-3.5 cursor-pointer gap-1.5"
+            >
+              {isApplyingPlan ? (
+                <>
+                  <Loader2 className="size-3.5 animate-spin" />
+                  <span>Applying...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="size-3.5" />
+                  <span>Apply Moves ({totalSelectedCount})</span>
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

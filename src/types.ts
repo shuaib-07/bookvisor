@@ -227,6 +227,7 @@ export interface AIChatMessage {
 export interface AIChatResponse {
   reply: string;
   relevant_bookmarks: Bookmark[];
+  proposed_moves?: BookmarkMove[];
 }
 
 export interface DefaultBrowserInfo {
