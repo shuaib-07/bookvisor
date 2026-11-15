@@ -1397,12 +1397,15 @@ export function AISidepanel({
           {/* Header & Prompt Refinement */}
           <div className="p-3 border-b border-white/[0.04] space-y-2.5 bg-black/10 shrink-0">
             <div className="flex items-center justify-between text-xs">
-              <span className="font-semibold text-foreground flex items-center gap-1.5">
-                <FolderPlus className="size-3.5 text-primary" />
-                <span>Interactive AI Organize</span>
-              </span>
-              <span className="text-[10px] text-muted-foreground font-mono">
-                {effectiveScopeFolder ? `Folder: ${effectiveScopeFolder.title}` : "All Bookmarks"}
+              <div className="flex items-center gap-1.5 font-semibold text-foreground truncate">
+                <FolderPlus className="size-3.5 text-primary shrink-0" />
+                <span>Scope:</span>
+                <span className="text-primary font-bold truncate">
+                  {effectiveScopeFolder ? `"${effectiveScopeFolder.title}"` : "Entire Library"}
+                </span>
+              </div>
+              <span className="text-[10px] text-muted-foreground font-mono bg-white/[0.04] px-2 py-0.5 rounded-full border border-white/[0.06] shrink-0">
+                {totalMovesCount} bookmarks in folder
               </span>
             </div>
 
@@ -1416,7 +1419,11 @@ export function AISidepanel({
                     handleGenerateOrganizePlan(organizePrompt);
                   }
                 }}
-                placeholder='e.g. "Inspiration in a folder, icon library in another..."'
+                placeholder={
+                  effectiveScopeFolder
+                    ? `e.g. "Create inspiration subfolder, icons subfolder inside ${effectiveScopeFolder.title}..."`
+                    : 'e.g. "Inspiration in a folder, icon library in another..."'
+                }
                 className="w-full pl-3 pr-22 py-2 text-xs rounded-xl bg-white/[0.04] border border-white/[0.08] focus:border-primary/50 focus:ring-1 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground/60 outline-none transition-all shadow-inner"
               />
               <Button
@@ -1437,7 +1444,7 @@ export function AISidepanel({
             {/* Quick Example Prompt Pills */}
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
               {[
-                "Inspiration, Icons, and Design in separate folders",
+                "Inspiration, Icons, and Design in separate subfolders",
                 "Group by Frameworks & Libraries",
                 "Documentation vs Tools & Utilities",
                 "Torrents & Downloads in separate folder",
@@ -1492,7 +1499,7 @@ export function AISidepanel({
                     : "bg-white/[0.04] text-muted-foreground hover:text-foreground border-white/[0.08]"
                 )}
               >
-                <span>All Folders</span>
+                <span>{effectiveScopeFolder ? `All in "${effectiveScopeFolder.title}"` : "All Categories"}</span>
                 <span className="font-mono text-[9px] opacity-80">
                   ({totalSelectedCount}/{totalMovesCount})
                 </span>
@@ -1580,6 +1587,13 @@ export function AISidepanel({
                         />
 
                         <FolderPlus className="size-3.5 text-primary shrink-0" />
+
+                        {/* Parent folder prefix badge */}
+                        {effectiveScopeFolder && (
+                          <span className="text-[11px] text-muted-foreground/75 font-mono shrink-0 select-none">
+                            {effectiveScopeFolder.title} /
+                          </span>
+                        )}
 
                         {/* Editable Folder Name */}
                         <input
