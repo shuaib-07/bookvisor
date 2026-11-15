@@ -113,7 +113,7 @@ export function UpdatePromptModal({ isOpen, onClose, updateInfo }: UpdatePromptM
       isOpen={isOpen}
       onClose={status === "downloading" || status === "installing" ? () => {} : onClose}
       title="Update Available"
-      description="A new version of Termizen is ready to download."
+      description="A new version of BookVisor is ready to download."
       icon={<ArrowUpCircle className="h-4 w-4 text-primary" />}
       maxWidth="max-w-md"
     >

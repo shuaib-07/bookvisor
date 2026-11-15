@@ -9,7 +9,6 @@ import {
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
-  Sparkles,
   Settings,
   Info,
   Bot,
@@ -44,7 +43,6 @@ import { HideConfirmationModal } from "@/components/modals/HideConfirmationModal
 import { UpdatePromptModal } from "@/components/about/UpdatePromptModal";
 import { checkAppUpdates, getAutoCheckUpdates, type UpdateInfo } from "@/lib/updater";
 import { Tooltip } from "@/components/ui/tooltip";
-import { Button } from "@/components/ui/button";
 import { FeedbackAction } from "@/components/ui/feedback-action";
 import { useToast } from "@/components/ui/animated-toast-stack";
 import type { Bookmark, Folder, LibraryStats, ScraperProgress, ViewFilter, ZenSyncStatus, BrowserAccount } from "@/types";
@@ -949,18 +947,6 @@ export default function App() {
         <div className="flex items-center gap-2">
           {/* Cluster 1: Primary Action & Sync */}
           <div className="flex items-center gap-1.5">
-            <Button
-              size="sm"
-              onClick={() => {
-                setAiScopeFolder(null);
-                setAiWizardOpen(true);
-              }}
-              className="h-8 rounded-lg gap-1.5 text-xs px-3 shadow-xs bg-primary hover:bg-primary/90 text-primary-foreground font-medium cursor-pointer"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>AI Organize</span>
-            </Button>
-
             <FeedbackAction
               status={browserSyncStatus}
               idleMessage={defaultBrowserName ? `Sync ${defaultBrowserName}` : "Sync Browser"}
@@ -1145,8 +1131,8 @@ export default function App() {
                     setBookmarkToEdit(null);
                     setBookmarkModalOpen(true);
                   }}
-                  onOpenAICategorize={() => {
-                    setAiScopeFolder(null);
+                  onOpenAICategorize={(f) => {
+                    setAiScopeFolder(f || null);
                     setAiWizardOpen(true);
                   }}
                   onOpenConnectWizard={() => setConnectWizardOpen(true)}
@@ -1232,6 +1218,10 @@ export default function App() {
               onNewBookmark={() => {
                 setBookmarkToEdit(null);
                 setBookmarkModalOpen(true);
+              }}
+              onOpenAICategorize={(f) => {
+                setAiScopeFolder(f);
+                setAiWizardOpen(true);
               }}
               onSelectFolder={(fid) => {
                 setActiveFolderId(fid);

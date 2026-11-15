@@ -115,7 +115,9 @@ export function AICategorizeWizardModal({
           <Sparkles className="w-4 h-4 text-primary" />
           <span>
             {scopeFolder
-              ? `AI Subfolder Deep Dive: ${scopeFolder.title}`
+              ? scopeFolder.id === "unorganized"
+                ? "AI Organize: Unorganized / Inbox"
+                : `AI Subfolder Deep Dive: ${scopeFolder.title}`
               : "AI Organization & Taxonomy Wizard"}
           </span>
         </div>
@@ -131,7 +133,9 @@ export function AICategorizeWizardModal({
               <span className="text-muted-foreground">Scope: </span>
               <strong className="text-foreground">
                 {scopeFolder
-                  ? `Subfolders inside "${scopeFolder.title}"`
+                  ? scopeFolder.id === "unorganized"
+                    ? "Unorganized / Inbox"
+                    : `Folder "${scopeFolder.title}" (Subfolders)`
                   : "Entire Library"}
               </strong>
               <span className="text-muted-foreground ml-2">

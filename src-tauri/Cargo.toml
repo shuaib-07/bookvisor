@@ -1,6 +1,6 @@
 [package]
 name = "bookvisor"
-version = "0.1.0"
+version = "0.1.1"
 description = "BookVisor - Local-First AI Bookmark Manager"
 authors = ["you"]
 edition = "2021"

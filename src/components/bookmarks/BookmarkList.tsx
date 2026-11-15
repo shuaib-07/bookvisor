@@ -79,6 +79,7 @@ interface Props {
   onDeleteBookmark: (id: string) => void;
   onMoveBookmark: (bookmarkId: string, folderId: string | null) => void;
   onNewBookmark: () => void;
+  onOpenAICategorize?: (folder: Folder | null) => void;
   onSelectFolder?: (folderId: string | null) => void;
   onOpenDuplicates?: (folder: Folder | null) => void;
   onTransferBookmarkAccount?: (bookmarkId: string, targetAccountId: string, isMove: boolean) => void;
@@ -115,6 +116,7 @@ export function BookmarkList({
   onDeleteBookmark,
   onMoveBookmark,
   onNewBookmark,
+  onOpenAICategorize,
   onSelectFolder,
   onOpenDuplicates,
   onTransferBookmarkAccount,
@@ -641,6 +643,48 @@ export function BookmarkList({
                     {deadCountInFolder}
                   </span>
                 )}
+              </Button>
+            </Tooltip>
+
+            {/* AI Organize Button (Scoped to Current Folder) */}
+            <Tooltip
+              content={
+                currentFolder
+                  ? `AI auto-organize bookmarks inside "${currentFolder.title}"`
+                  : activeFilter === "unorganized"
+                    ? "AI auto-organize unorganized inbox bookmarks"
+                    : "AI auto-organize library bookmarks"
+              }
+            >
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (currentFolder) {
+                    onOpenAICategorize?.(currentFolder);
+                  } else if (activeFilter === "unorganized") {
+                    onOpenAICategorize?.({
+                      id: "unorganized",
+                      title: "Unorganized / Inbox",
+                      parent_id: null,
+                      browser_guid: null,
+                      position: 0,
+                      is_locked: false,
+                      color: null,
+                      icon: null,
+                      created_at: "",
+                      updated_at: "",
+                      is_deleted: false,
+                      is_hidden: false,
+                    });
+                  } else {
+                    onOpenAICategorize?.(null);
+                  }
+                }}
+                className="h-8 rounded-lg gap-1.5 text-xs px-2.5 border-white/[0.08] bg-card/60 backdrop-blur-md hover:border-primary/50 hover:bg-primary/10 hover:text-primary transition-colors cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-primary" />
+                <span>AI Organize</span>
               </Button>
             </Tooltip>
 

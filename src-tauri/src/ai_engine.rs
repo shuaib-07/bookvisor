@@ -93,14 +93,17 @@ pub async fn ai_generate_organization_plan(
             if fid == "unorganized" {
                 None
             } else {
-                folders.iter().find(|f| &f.id == fid).map(|f| f.title.clone())
+                crate::db::get_folder_path(&conn, fid)
             }
         } else {
             None
         };
 
-        // Query bookmarks safely based on scope
-        let base_query = format!("SELECT {} FROM bookmarks WHERE is_deleted = 0", crate::db::BOOKMARK_SELECT_FIELDS);
+        // Query bookmarks safely based on scope, excluding deleted and hidden bookmarks
+        let base_query = format!(
+            "SELECT {} FROM bookmarks WHERE is_deleted = 0 AND is_hidden = 0",
+            crate::db::BOOKMARK_SELECT_FIELDS
+        );
 
         let bookmarks: Vec<Bookmark> = match scope_folder_id.as_deref() {
             Some("unorganized") => {
@@ -111,7 +114,10 @@ pub async fn ai_generate_organization_plan(
             }
             Some(fid) => {
                 let mut b_stmt = conn
-                    .prepare(&format!("{} AND folder_id = ?1", base_query))
+                    .prepare(&format!(
+                        "{} AND (folder_id = ?1 OR folder_id IN (WITH RECURSIVE subfolders AS (SELECT id FROM folders WHERE parent_id = ?1 AND is_deleted = 0 UNION ALL SELECT f.id FROM folders f JOIN subfolders s ON f.parent_id = s.id WHERE f.is_deleted = 0) SELECT id FROM subfolders))",
+                        base_query
+                    ))
                     .map_err(|e| e.to_string())?;
                 map_bookmarks_query(&mut b_stmt, &[&fid])?
             }

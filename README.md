@@ -33,8 +33,8 @@ Open the [latest release page](https://github.com/shuaib-07/bookvisor/releases/l
 
 | Platform | Package | Note |
 | :-- | :-- | :-- |
-| **Windows 10/11 (x64 Installer)** | `BookVisor_0.1.0_x64-setup.exe` | Guided NSIS installer with desktop and Start Menu shortcuts |
-| **Windows 10/11 (x64 MSI)** | `BookVisor_0.1.0_x64_en-US.msi` | Windows Installer package for enterprise deployment |
+| **Windows 10/11 (x64 Installer)** | `BookVisor_0.1.1_x64-setup.exe` | Guided NSIS installer with desktop and Start Menu shortcuts |
+| **Windows 10/11 (x64 MSI)** | `BookVisor_0.1.1_x64_en-US.msi` | Windows Installer package for enterprise deployment |
 
 *Unsigned binary — if Windows SmartScreen displays a warning on first launch, click **More info** then **Run anyway**.*
 

@@ -67,7 +67,7 @@ interface Props {
   onOpenAIDeepDive?: (folder: Folder) => void;
   onScrapeFolder?: (folderId: string, forceAll: boolean) => void;
   onNewBookmark?: () => void;
-  onOpenAICategorize?: () => void;
+  onOpenAICategorize?: (folder?: Folder | null) => void;
   onOpenConnectWizard?: () => void;
   onSyncDefaultBrowser?: () => void;
   showHidden?: boolean;
@@ -235,7 +235,10 @@ export function FolderTreeSidebar({
         label: "AI Auto-Organize",
         description: "Smart categorization",
         icon: Sparkles,
-        onClick: onOpenAICategorize,
+        onClick: () => {
+          const activeFolder = activeFolderId ? folders.find((f) => f.id === activeFolderId) || null : null;
+          onOpenAICategorize(activeFolder);
+        },
       });
     }
     if (onOpenConnectWizard) {
